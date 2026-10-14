@@ -168,13 +168,32 @@ jobs:
           PKG: ${{ matrix.package }}
           FORCE: ${{ inputs.force || false }}
           BUMP_NIXPKGS: ${{ needs.prepare.outputs.bump_nixpkgs }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           input="${PKG}-src"
           locked_rev=$(jq -r --arg n "$input" '.nodes[$n].locked.rev // empty' flake.lock)
           locked_ref=$(jq -r --arg n "$input" '.nodes[$n].original.ref // empty' flake.lock)
 
-          release=$(curl -fsSL "https://api.github.com/repos/storytold/${PKG}/releases/latest")
+          # Unauthenticated api.github.com is 60/hour per runner IP. A 13-way
+          # matrix 403s before FORCE can take effect. Fall back to a forced build.
+          gh_get() {
+            curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$1"
+          }
+          if ! release=$(gh_get "https://api.github.com/repos/storytold/${PKG}/releases/latest"); then
+            echo "release lookup failed for storytold/${PKG}"
+            echo "should_update_lock=false" >> "$GITHUB_OUTPUT"
+            if [ "$FORCE" = true ] || [ "$BUMP_NIXPKGS" = true ]; then
+              echo "force/bump → build without lock update"
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            exit 1
+          fi
           tag=$(echo "$release" | jq -r '.tag_name // empty')
           if [ -z "$tag" ] || [ "$tag" = "null" ]; then
             echo "no GitHub release for storytold/${PKG}"
@@ -188,8 +207,17 @@ jobs:
           fi
 
           # Resolve the commit the tag points at (works for annotated tags).
-          tag_sha=$(curl -fsSL "https://api.github.com/repos/storytold/${PKG}/commits/${tag}" \
-            | jq -r '.sha // empty')
+          if ! tag_json=$(gh_get "https://api.github.com/repos/storytold/${PKG}/commits/${tag}"); then
+            echo "could not resolve commit for tag ${tag}"
+            echo "should_update_lock=false" >> "$GITHUB_OUTPUT"
+            if [ "$FORCE" = true ] || [ "$BUMP_NIXPKGS" = true ]; then
+              echo "force/bump → build without lock update"
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            exit 1
+          fi
+          tag_sha=$(echo "$tag_json" | jq -r '.sha // empty')
           if [ -z "$tag_sha" ]; then
             echo "could not resolve commit for tag ${tag}"
             echo "should_update_lock=false" >> "$GITHUB_OUTPUT"
