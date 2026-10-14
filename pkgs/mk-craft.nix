@@ -21,6 +21,7 @@
   alsa-lib,
   fontconfig,
   openssl,
+  python3,
   autoAddDriverRunpath ? null,
   craft-fonts ? null,
 }:
@@ -55,6 +56,12 @@ let
     dbus
     alsa-lib
   ];
+  nixosCjk = extraAttrs.nixosCjk or false;
+  extraPostPatch = extraAttrs.postPatch or "";
+  drvAttrs = builtins.removeAttrs extraAttrs [
+    "nixosCjk"
+    "postPatch"
+  ];
 in
 rustPlatform.buildRustPackage (
   {
@@ -83,6 +90,7 @@ rustPlatform.buildRustPackage (
       wayland-scanner
     ]
     ++ lib.optional (autoAddDriverRunpath != null) autoAddDriverRunpath
+    ++ lib.optional nixosCjk python3
     ++ extraNativeBuildInputs;
 
     buildInputs = [
@@ -120,7 +128,9 @@ rustPlatform.buildRustPackage (
       fi
       install -Dm644 -t $out/share/doc/${pname} README.md $(ls LICENSE-* NOTICE 2>/dev/null) || true
       for b in $out/bin/*; do
-        wrapProgram "$b" --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}"
+        wrapProgram "$b" \
+          --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
+          --prefix PATH : "${lib.makeBinPath [ fontconfig ]}"
       done
     '';
 
@@ -136,5 +146,12 @@ rustPlatform.buildRustPackage (
       mainProgram = builtins.head binaries;
     };
   }
-  // extraAttrs
+  // lib.optionalAttrs (nixosCjk || extraPostPatch != "") {
+    postPatch =
+      lib.optionalString nixosCjk ''
+        python3 ${./nixos-fonts.py}
+      ''
+      + extraPostPatch;
+  }
+  // drvAttrs
 )

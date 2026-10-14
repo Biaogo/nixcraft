@@ -4,6 +4,7 @@
   photocraft = {
     src = inputs.photocraft-src;
     description = "PhotoCraft — layered image editor";
+    extraAttrs.nixosCjk = true;
   };
   pdfcraft = {
     src = inputs.pdfcraft-src;
@@ -27,10 +28,12 @@
         "_mm512_dpbusd_epi32(acc.0, a.0, b.0).into()" \
         "{ let mut c = acc.0; std::arch::asm!(\"vpdpbusd {c}, {a}, {b}\", c = inout(zmm_reg) c, a = in(zmm_reg) a.0, b = in(zmm_reg) b.0, options(nostack)); c.into() }"
     '';
+    extraAttrs.nixosCjk = true;
   };
   filmcraft = {
     src = inputs.filmcraft-src;
     description = "FilmCraft — video editor";
+    extraAttrs.nixosCjk = true;
   };
   lightcraft = {
     src = inputs.lightcraft-src;
@@ -43,6 +46,7 @@
   vectorcraft = {
     src = inputs.vectorcraft-src;
     description = "VectorCraft — vector graphics editor";
+    extraAttrs.nixosCjk = true;
   };
   effectcraft = {
     src = inputs.effectcraft-src;
@@ -51,25 +55,31 @@
   gridcraft = {
     src = inputs.gridcraft-src;
     description = "GridCraft — spreadsheet";
+    extraAttrs.nixosCjk = true;
   };
   cadcraft = {
     src = inputs.cadcraft-src;
     description = "CADCraft — CAD modeller";
+    extraAttrs.nixosCjk = true;
   };
   designcraft = {
     src = inputs.designcraft-src;
     description = "DesignCraft — graphic design tool";
+    extraAttrs.nixosCjk = true;
   };
   deckcraft = {
     src = inputs.deckcraft-src;
     description = "DeckCraft — presentation editor";
+    extraAttrs.nixosCjk = true;
   };
   soundcraft = {
     src = inputs.soundcraft-src;
     description = "SoundCraft — audio editor";
+    extraAttrs.nixosCjk = true;
   };
   figcraft = {
     src = inputs.figcraft-src;
     description = "FigCraft — UI/interface design tool";
+    extraAttrs.nixosCjk = true;
   };
 }
