@@ -1,0 +1,316 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    # Bot commits only touch flake.lock; also use [skip ci] in the commit message.
+    paths-ignore: [flake.lock]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "强制构建并推送（即使已是最新 Release） / Force build+push even if already on latest release"
+        type: boolean
+        default: false
+      bump_nixpkgs:
+        description: "更新 nixpkgs 并强制重建全部包 / Bump nixpkgs and rebuild all packages"
+        type: boolean
+        default: false
+  schedule:
+    # Daily 00:00 Asia/Shanghai (= 16:00 UTC previous calendar day). Always bumps nixpkgs.
+    - cron: "0 16 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Decide whether to bump nixpkgs. If so, update once and share the lock node via artifact.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      bump_nixpkgs: ${{ steps.decide.outputs.bump }}
+    steps:
+      - id: decide
+        name: Decide whether to bump nixpkgs
+        run: |
+          set -euo pipefail
+          bump=false
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            bump=true
+            echo "schedule → always bump nixpkgs"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.bump_nixpkgs }}" = "true" ]; then
+            bump=true
+            echo "workflow_dispatch with bump_nixpkgs=true"
+          else
+            echo "no nixpkgs bump"
+          fi
+          echo "bump=${bump}" >> "$GITHUB_OUTPUT"
+
+      - if: steps.decide.outputs.bump == 'true'
+        uses: actions/checkout@v7
+
+      - if: steps.decide.outputs.bump == 'true'
+        uses: cachix/install-nix-action@v31
+
+      - name: nix flake update nixpkgs
+        if: steps.decide.outputs.bump == 'true'
+        run: |
+          set -euo pipefail
+          before=$(jq -r '.nodes.nixpkgs.locked.rev' flake.lock)
+          nix flake update nixpkgs
+          after=$(jq -r '.nodes.nixpkgs.locked.rev' flake.lock)
+          echo "nixpkgs: ${before} → ${after}"
+          mkdir -p lock-node
+          jq '{nixpkgs: .nodes.nixpkgs}' flake.lock > lock-node/nixpkgs.json
+          cat lock-node/nixpkgs.json
+
+      - if: steps.decide.outputs.bump == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lock-nixpkgs
+          path: lock-node/nixpkgs.json
+          retention-days: 3
+
+  flake-check:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: Download bumped nixpkgs lock
+        if: needs.prepare.outputs.bump_nixpkgs == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: lock-nixpkgs
+          path: lock-nodes
+      - name: Merge nixpkgs into flake.lock
+        if: needs.prepare.outputs.bump_nixpkgs == 'true'
+        run: |
+          if [ -f lock-nodes/nixpkgs.json ]; then
+            jq -s '.[0] as $lock | ($lock.nodes + .[1]) as $n | $lock | .nodes = $n' \
+              flake.lock lock-nodes/nixpkgs.json > flake.lock.new
+            mv flake.lock.new flake.lock
+          fi
+      - run: nix flake check --no-build
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - photocraft
+          - pdfcraft
+          - filmcraft
+          - lightcraft
+          - wordcraft
+          - vectorcraft
+          - effectcraft
+          - gridcraft
+          - cadcraft
+          - designcraft
+          - deckcraft
+          - soundcraft
+          - figcraft
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            max-jobs = auto
+
+      # Use biaogo as a substituter only; push final outputs explicitly below.
+      - uses: cachix/cachix-action@v17
+        with:
+          name: biaogo
+          authToken: ${{ env.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+
+      - name: Download bumped nixpkgs lock
+        if: needs.prepare.outputs.bump_nixpkgs == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: lock-nixpkgs
+          path: lock-nodes
+
+      - name: Merge nixpkgs into flake.lock
+        if: needs.prepare.outputs.bump_nixpkgs == 'true'
+        run: |
+          set -euo pipefail
+          jq -s '.[0] as $lock | ($lock.nodes + .[1]) as $n | $lock | .nodes = $n' \
+            flake.lock lock-nodes/nixpkgs.json > flake.lock.new
+          mv flake.lock.new flake.lock
+          jq -r '.nodes.nixpkgs.locked.rev' flake.lock
+
+      - name: Check latest GitHub release vs flake.lock
+        id: check
+        env:
+          PKG: ${{ matrix.package }}
+          FORCE: ${{ inputs.force || false }}
+          BUMP_NIXPKGS: ${{ needs.prepare.outputs.bump_nixpkgs }}
+        run: |
+          set -euo pipefail
+          input="${PKG}-src"
+          locked_rev=$(jq -r --arg n "$input" '.nodes[$n].locked.rev // empty' flake.lock)
+          locked_ref=$(jq -r --arg n "$input" '.nodes[$n].original.ref // empty' flake.lock)
+
+          release=$(curl -fsSL "https://api.github.com/repos/storytold/${PKG}/releases/latest")
+          tag=$(echo "$release" | jq -r '.tag_name // empty')
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "no GitHub release for storytold/${PKG}"
+            echo "should_update_lock=false" >> "$GITHUB_OUTPUT"
+            if [ "$FORCE" = true ] || [ "$BUMP_NIXPKGS" = true ]; then
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          # Resolve the commit the tag points at (works for annotated tags).
+          tag_sha=$(curl -fsSL "https://api.github.com/repos/storytold/${PKG}/commits/${tag}" \
+            | jq -r '.sha // empty')
+          if [ -z "$tag_sha" ]; then
+            echo "could not resolve commit for tag ${tag}"
+            echo "should_update_lock=false" >> "$GITHUB_OUTPUT"
+            if [ "$FORCE" = true ] || [ "$BUMP_NIXPKGS" = true ]; then
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          {
+            echo "latest_tag=${tag}"
+            echo "tag_sha=${tag_sha}"
+            echo "locked_rev=${locked_rev}"
+            echo "locked_ref=${locked_ref}"
+          } >> "$GITHUB_OUTPUT"
+
+          on_release=false
+          if [ "$tag_sha" = "$locked_rev" ] || [ "$locked_ref" = "$tag" ]; then
+            on_release=true
+          fi
+
+          if [ "$on_release" = true ]; then
+            echo "already on release ${tag} (${tag_sha})"
+            echo "should_update_lock=false" >> "$GITHUB_OUTPUT"
+            if [ "$FORCE" = true ] || [ "$BUMP_NIXPKGS" = true ]; then
+              echo "force/bump_nixpkgs → build+push without package lock update"
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip (not forced, nixpkgs not bumped)"
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "update: ${locked_ref:-?}@${locked_rev} -> ${tag}@${tag_sha}"
+            {
+              echo "should_build=true"
+              echo "should_update_lock=true"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Lock input to release tag
+        if: steps.check.outputs.should_update_lock == 'true'
+        env:
+          PKG: ${{ matrix.package }}
+          TAG: ${{ steps.check.outputs.latest_tag }}
+        run: |
+          set -euo pipefail
+          # Pin this input in flake.lock to the official Release tag (flake.nix URL unchanged).
+          nix flake lock --override-input "${PKG}-src" "github:storytold/${PKG}/${TAG}"
+          jq --arg n "${PKG}-src" '.nodes[$n].locked' flake.lock
+
+      - name: Build ${{ matrix.package }}
+        if: steps.check.outputs.should_build == 'true'
+        run: nix build -L ".#${{ matrix.package }}" --print-out-paths --no-link > out-paths.txt
+
+      # Upload only when the package source lock actually changed (for commit-lock).
+      - name: Export updated lock node
+        if: steps.check.outputs.should_update_lock == 'true'
+        run: |
+          mkdir -p lock-node
+          jq --arg n "${{ matrix.package }}-src" '{($n): .nodes[$n]}' flake.lock \
+            > "lock-node/${{ matrix.package }}.json"
+          cat "lock-node/${{ matrix.package }}.json"
+
+      - uses: actions/upload-artifact@v7
+        if: steps.check.outputs.should_update_lock == 'true'
+        with:
+          name: lock-${{ matrix.package }}
+          path: lock-node/${{ matrix.package }}.json
+          retention-days: 3
+
+      - name: Push final output to Cachix and pin it
+        if: steps.check.outputs.should_build == 'true'
+        # Push the final store path only; pin keeps a single revision.
+        # Secrets added while a run is in progress are not visible — re-run after setting the token.
+        run: |
+          set -euo pipefail
+          if [ -z "${CACHIX_AUTH_TOKEN:-}" ]; then
+            echo "::error::CACHIX_AUTH_TOKEN is empty. Secrets set while a run is in progress are not visible to that run — cancel it and start a new workflow_dispatch (optionally with force=true / bump_nixpkgs=true) after adding the secret."
+            exit 1
+          fi
+          out=$(head -n1 out-paths.txt)
+          cachix push biaogo "$out"
+          cachix pin biaogo "${{ matrix.package }}" "$out" --keep-revisions 1
+
+  commit-lock:
+    needs: [prepare, build]
+    # Merge successful package lock updates and (if any) the nixpkgs node.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: lock-*
+          path: lock-nodes
+          merge-multiple: true
+
+      - name: Merge updated lock nodes into flake.lock
+        run: |
+          shopt -s nullglob
+          files=(lock-nodes/*.json)
+          if [ ${#files[@]} -eq 0 ]; then echo "no lock updates"; exit 0; fi
+          echo "merging: ${files[*]}"
+          jq -s '.[0] as $lock | ($lock.nodes + (.[1:] | add)) as $n | $lock | .nodes = $n' \
+            flake.lock "${files[@]}" > flake.lock.new
+          mv flake.lock.new flake.lock
+          git diff --stat
+
+      - name: Commit and push
+        run: |
+          if git diff --quiet -- flake.lock; then echo "flake.lock unchanged"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "flake.lock: update nixpkgs and/or package release pins [skip ci]" -- flake.lock
+          git pull --rebase origin main
+          git push origin HEAD:main
