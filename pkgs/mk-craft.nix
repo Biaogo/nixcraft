@@ -108,7 +108,11 @@ rustPlatform.buildRustPackage (
     ]
     ++ extraBuildInputs;
 
-    env = lib.optionalAttrs (craft-fonts != null) { CRAFT_FONTS_DIR = toString craft-fonts; };
+    env = lib.optionalAttrs (craft-fonts != null) {
+      CRAFT_FONTS_DIR = toString craft-fonts;
+      # Static glyf Noto Emoji that contains U+1F9D2. egui's bundled subset does not.
+      NIXOS_EMOJI_TTF = "${craft-fonts}/fonts/noto-emoji/NotoEmoji-Regular.ttf";
+    };
 
     postInstall = ''
       p=packaging/linux

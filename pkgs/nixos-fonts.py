@@ -349,15 +349,59 @@ def patch_film_focus(path, text):
 
 
 def patch_skip_cff_in_egui(path, text):
-    """epaint draws glyf only. A CFF face in the egui stack is selected, then painted as .notdef."""
+    """Drop CFF faces before they are named. Returning from add() left the name in the family and epaint panicked."""
     if "FontDefinitions" not in text:
         return text, False
-    old = "fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(data)));"
-    new = """if data.starts_with(b\"OTTO\") { return; }\n        fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(data)));"""
-    if old not in text or "data.starts_with(b\"OTTO\")" in text:
+    old = ".filter(|f| f.scripts.contains(&script)).collect()"
+    new = '.filter(|f| f.scripts.contains(&script) && !f.bytes.starts_with(b"OTTO")).collect()'
+    if old not in text or 'starts_with(b"OTTO")' in text:
         return text, False
-    return text.replace(old, new, 1), True
+    return text.replace(old, new), True
 
+
+def patch_fc_match_charset(path, text):
+    """fc-match :lang=zh-cn hits Symbols Nerd Font when that family is prepended. Require a Han probe."""
+    old = '&format!(":lang={language}")'
+    new = '&format!(":lang={language}:charset={}", match language { "zh-cn" => "73b0", "zh-tw" => "9ad4", "ko" => "ac00", _ => "3042" })'
+    if old not in text or "charset=" in text:
+        return text, False
+    return text.replace(old, new), True
+
+
+def patch_egui_child_emoji(path, text):
+    """egui's bundled Noto Emoji has U+1F632 and not U+1F9D2. Append a glyf face that has it."""
+    if not os.environ.get("NIXOS_EMOJI_TTF") or "nixos-emoji" in text:
+        return text, False
+    changed = False
+    old = "let mut fonts = FontDefinitions::default();"
+    insert = (
+        "let mut fonts = FontDefinitions::default();\n"
+        '    fonts.font_data.insert("nixos-emoji".into(), std::sync::Arc::new(egui::FontData::from_static(include_bytes!(env!("NIXOS_EMOJI_TTF")))));\n'
+        '    for stack in fonts.families.values_mut() { stack.push("nixos-emoji".into()); }'
+    )
+    if old in text:
+        text = text.replace(old, insert, 1)
+        changed = True
+    needle = '("emoji-icon-font", EMOJI_ICON.as_slice(), 0.90),'
+    if needle in text and "nixos-emoji" not in text:
+        text = text.replace("[(&str, &'static [u8], f32); 4]", "[(&str, &'static [u8], f32); 5]", 1)
+        text = text.replace(
+            needle,
+            needle + '\n        ("nixos-emoji", include_bytes!(env!("NIXOS_EMOJI_TTF")), 0.81),',
+            1,
+        )
+        text = text.replace(
+            'stack(&["Ubuntu-Light", "NotoEmoji-Regular", "emoji-icon-font"])',
+            'stack(&["Ubuntu-Light", "NotoEmoji-Regular", "emoji-icon-font", "nixos-emoji"])',
+            1,
+        )
+        text = text.replace(
+            'stack(&["Hack", "Ubuntu-Light", "NotoEmoji-Regular", "emoji-icon-font"])',
+            'stack(&["Hack", "Ubuntu-Light", "NotoEmoji-Regular", "emoji-icon-font", "nixos-emoji"])',
+            1,
+        )
+        changed = True
+    return text, changed
 
 def patch_load_hans_craft(path, text):
     """Canvas FontDb only embedded Japanese craft-fonts. Simplified Chinese never entered the fallback."""
@@ -423,6 +467,8 @@ RULES = [
     patch_design_caret,
     patch_film_focus,
     patch_skip_cff_in_egui,
+    patch_fc_match_charset,
+    patch_egui_child_emoji,
     patch_load_hans_craft,
     patch_skip_cbdt,
 ]

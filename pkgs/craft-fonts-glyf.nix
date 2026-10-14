@@ -12,9 +12,11 @@
 }:
 let
   py = python3.withPackages (ps: [ ps.fonttools ]);
+  # egui 0.36.2's subset has 😲 (U+1F632) and not 🧒 (U+1F9D2). The variable
+  # face is glyf; instantiate Regular so epaint does not have to apply gvar.
   notoEmoji = fetchurl {
-    url = "https://raw.githubusercontent.com/emilk/egui/0.36.2/crates/epaint_default_fonts/fonts/NotoEmoji-Regular.ttf";
-    hash = "sha256-QV3GKQN4V0E1tkyAjcZAwd91MZcykMSXDFH964ScsMU=";
+    url = "https://raw.githubusercontent.com/google/fonts/main/ofl/notoemoji/NotoEmoji%5Bwght%5D.ttf";
+    hash = "sha256-3mwYgyk4r8mcrxMrOdajChm6x/LoEuKNslNbRgjSdVE=";
   };
 in
 stdenvNoCC.mkDerivation {
@@ -31,14 +33,17 @@ stdenvNoCC.mkDerivation {
     mkdir -p $out/fonts/wqy-microhei $out/fonts/noto-emoji
     ${py}/bin/python3 - << 'PY'
     import hashlib, pathlib, os
-    from fontTools.ttLib import TTCollection
+    from fontTools.ttLib import TTCollection, TTFont
+    from fontTools.varLib.instancer import instantiateVariableFont
     out = pathlib.Path(os.environ["out"])
     wqy = "${wqy_microhei}/share/fonts/truetype/wqy-microhei.ttc"
     face = TTCollection(wqy).fonts[0]
     wqy_path = out / "fonts/wqy-microhei/wqy-microhei.ttf"
     face.save(wqy_path)
     emoji_path = out / "fonts/noto-emoji/NotoEmoji-Regular.ttf"
-    emoji_path.write_bytes(pathlib.Path("${notoEmoji}").read_bytes())
+    emoji = TTFont("${notoEmoji}")
+    instantiateVariableFont(emoji, {"wght": 400}, inplace=True, updateFontNames=True)
+    emoji.save(emoji_path)
     assert wqy_path.read_bytes()[:4] == b"\x00\x01\x00\x00"
     assert b"glyf" in wqy_path.read_bytes()[:4096] or True
     # glyf table may sit past the header; check the table directory.
@@ -51,7 +56,7 @@ stdenvNoCC.mkDerivation {
         return hashlib.sha256(p.read_bytes()).hexdigest()
     extra = [
         f"WenQuanYi Micro Hei | Regular | fonts/wqy-microhei/wqy-microhei.ttf | Hans,Latn | OFL-1.1 | fonts/noto-sans-cjk-sc/OFL.txt | {sha(wqy_path)} | nixpkgs wqy_microhei",
-        f"Noto Emoji | Regular | fonts/noto-emoji/NotoEmoji-Regular.ttf | Hans,Jpan,Latn | OFL-1.1 | fonts/noto-sans-cjk-sc/OFL.txt | {sha(emoji_path)} | https://github.com/emilk/egui/blob/0.36.2/crates/epaint_default_fonts/fonts/NotoEmoji-Regular.ttf",
+        f"Noto Emoji | Regular | fonts/noto-emoji/NotoEmoji-Regular.ttf | Hans,Jpan | OFL-1.1 | fonts/noto-sans-cjk-sc/OFL.txt | {sha(emoji_path)} | https://github.com/google/fonts/tree/main/ofl/notoemoji",
     ]
     man = out / "fonts/manifest.txt"
     text = man.read_text()
