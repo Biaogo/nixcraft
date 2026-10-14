@@ -246,11 +246,11 @@
     "wordcraft-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1791817872,
-        "narHash": "sha256-10djkguZ4kJBvZTH5Oni5D0XZrfe1gayy7WhsBlpd+0=",
+        "lastModified": 1791983245,
+        "narHash": "sha256-SfrnSydUVuh+3tJ69OINsc1thkubgVh8aEVBfZyXmsM=",
         "owner": "storytold",
         "repo": "wordcraft",
-        "rev": "7dfa6b0ee2aeeafec004c51fdd2ab9a697da3cc4",
+        "rev": "fc41918814f62645b6746ed68e71e8c2c2e85d6f",
         "type": "github"
       },
       "original": {
