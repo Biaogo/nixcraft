@@ -79,7 +79,8 @@
       mkAll =
         pkgs:
         let
-          mkCraft = pkgs.callPackage ./pkgs/mk-craft.nix { inherit craft-fonts; };
+          craftFonts = pkgs.callPackage ./pkgs/craft-fonts-glyf.nix { inherit craft-fonts; };
+          mkCraft = pkgs.callPackage ./pkgs/mk-craft.nix { craft-fonts = craftFonts; };
           each = lib.mapAttrs (name: spec: mkCraft ({ pname = name; } // spec)) specs;
         in
         each

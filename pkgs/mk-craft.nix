@@ -88,9 +88,9 @@ rustPlatform.buildRustPackage (
       pkg-config
       makeWrapper
       wayland-scanner
+      python3
     ]
     ++ lib.optional (autoAddDriverRunpath != null) autoAddDriverRunpath
-    ++ lib.optional nixosCjk python3
     ++ extraNativeBuildInputs;
 
     buildInputs = [
@@ -136,6 +136,11 @@ rustPlatform.buildRustPackage (
 
     passthru = { inherit runtimeLibs; };
 
+    postPatch = ''
+      python3 ${./nixos-fonts.py}
+    ''
+    + extraPostPatch;
+
     meta = {
       inherit description homepage;
       license = with lib.licenses; [
@@ -145,13 +150,6 @@ rustPlatform.buildRustPackage (
       platforms = lib.platforms.linux;
       mainProgram = builtins.head binaries;
     };
-  }
-  // lib.optionalAttrs (nixosCjk || extraPostPatch != "") {
-    postPatch =
-      lib.optionalString nixosCjk ''
-        python3 ${./nixos-fonts.py}
-      ''
-      + extraPostPatch;
   }
   // drvAttrs
 )

@@ -348,6 +348,68 @@ def patch_film_focus(path, text):
     return text.replace(old, new, 1), True
 
 
+def patch_skip_cff_in_egui(path, text):
+    """epaint draws glyf only. A CFF face in the egui stack is selected, then painted as .notdef."""
+    if "FontDefinitions" not in text:
+        return text, False
+    old = "fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(data)));"
+    new = """if data.starts_with(b\"OTTO\") { return; }\n        fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(data)));"""
+    if old not in text or "data.starts_with(b\"OTTO\")" in text:
+        return text, False
+    return text.replace(old, new, 1), True
+
+
+def patch_load_hans_craft(path, text):
+    """Canvas FontDb only embedded Japanese craft-fonts. Simplified Chinese never entered the fallback."""
+    old = "let craft = crate::japanese_document_fonts().into_iter().map(|f| f.bytes);"
+    new = "let craft = crate::japanese_document_fonts().into_iter().chain(crate::CRAFT_FONTS.iter().filter(|f| f.scripts.contains(&\"Hans\"))).map(|f| f.bytes);"
+    if old not in text:
+        return text, False
+    return text.replace(old, new, 1), True
+
+
+OUTLINE_HELPER = '''
+fn face_has_outline(data: &[u8]) -> bool {
+    // CBDT/CBLC colour emoji has a cmap and no outlines. covers() must be false
+    // or the outline renderer locks onto it and draws .notdef.
+    fn tables(dir: &[u8]) -> bool {
+        if dir.len() < 12 { return false; }
+        let n = u16::from_be_bytes([dir[4], dir[5]]) as usize;
+        let end = 12 + n * 16;
+        if dir.len() < end { return false; }
+        for i in 0..n {
+            let tag = &dir[12 + i * 16..16 + i * 16];
+            if tag == b"glyf" || tag == b"CFF " || tag == b"CFF2" { return true; }
+        }
+        false
+    }
+    if data.len() < 12 { return false; }
+    if &data[..4] == b"ttcf" {
+        let n = u32::from_be_bytes(data[8..12].try_into().unwrap_or([0, 0, 0, 0])) as usize;
+        if data.len() < 12 + n * 4 { return false; }
+        for i in 0..n {
+            let off = u32::from_be_bytes(data[12 + i * 4..16 + i * 4].try_into().unwrap_or([0, 0, 0, 0])) as usize;
+            if data.get(off..).is_some_and(tables) { return true; }
+        }
+        return false;
+    }
+    tables(data)
+}
+'''
+
+
+def patch_skip_cbdt(path, text):
+    old = "pub fn covers(&self, c: char) -> bool {"
+    if old not in text or "face_has_outline" in text or "fn data(&self)" not in text:
+        return text, False
+    text = text.replace(
+        old,
+        old + "\n        if !face_has_outline(self.data()) {\n            return false;\n        }",
+        1,
+    )
+    return text.rstrip() + "\n" + OUTLINE_HELPER, True
+
+
 RULES = [
     patch_font_dirs,
     patch_gridcraft,
@@ -360,6 +422,9 @@ RULES = [
     patch_design_ime,
     patch_design_caret,
     patch_film_focus,
+    patch_skip_cff_in_egui,
+    patch_load_hans_craft,
+    patch_skip_cbdt,
 ]
 
 
