@@ -140,6 +140,15 @@ rustPlatform.buildRustPackage (
 
     passthru = { inherit runtimeLibs; };
 
+    # cargoSetupPostUnpackHook (postUnpack) leaves a writable copy of the
+    # vendored crates in the build tree and exports it as $cargoDepsCopy. It is
+    # unset again by cargoSetupPostPatchHook, but prePatch still runs before
+    # that, so the egui fixes land in the crate every app compiles against
+    # without patching a dozen call sites per app.
+    prePatch = ''
+      python3 ${./craft-vendor-egui.py} "''${cargoDepsCopy:?cargoSetupPostUnpackHook did not run}"
+    '';
+
     postPatch = ''
       python3 ${./nixos-fonts.py} . ${lib.optionalString (craft-fonts != null) "${craft-fonts}/fonts/noto-emoji/NotoEmoji-Regular.ttf"}
     ''

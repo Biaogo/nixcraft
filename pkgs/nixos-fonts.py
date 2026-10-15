@@ -356,6 +356,15 @@ def emoji_ttf():
     return os.environ.get("NIXOS_EMOJI_TTF") or ""
 
 
+def is_test_code(path, text, pos):
+    """True when `pos` sits inside test code - those files keep working code untouched."""
+    parts = path.replace("\\", "/").split("/")
+    if "tests" in parts or path.endswith("_tests.rs"):
+        return True
+    marker = text.rfind("\n#[cfg(test)]")
+    return marker != -1 and pos > marker
+
+
 def patch_egui_child_emoji(path, text):
     """egui's bundled Noto Emoji has U+1F632 and not U+1F9D2. Append a glyf face that has it."""
     ttf = emoji_ttf()
@@ -368,7 +377,8 @@ def patch_egui_child_emoji(path, text):
         "let mut fonts = FontDefinitions::default();",
         "let mut fonts = egui::FontDefinitions::default();",
     ):
-        if old not in text:
+        pos = text.find(old)
+        if pos == -1 or is_test_code(path, text, pos):
             continue
         insert = (
             old + "\n"
@@ -458,10 +468,47 @@ def patch_vector_search_ime(path, text):
 def patch_load_hans_craft(path, text):
     """Canvas FontDb only embedded Japanese craft-fonts. Simplified Chinese never entered the fallback."""
     old = "let craft = crate::japanese_document_fonts().into_iter().map(|f| f.bytes);"
-    new = "let craft = crate::japanese_document_fonts().into_iter().chain(crate::CRAFT_FONTS.iter().filter(|f| f.scripts.contains(&\"Hans\"))).map(|f| f.bytes);"
+    new = (
+        "let craft = crate::japanese_document_fonts().into_iter().chain(crate::CRAFT_FONTS.iter()"
+        '.filter(|f| f.scripts.contains(&"Hans") || f.scripts.contains(&"Zyyy"))).map(|f| f.bytes);'
+    )
     if old not in text:
         return text, False
     return text.replace(old, new, 1), True
+
+
+def patch_photocraft_canvas_emoji(path, text):
+    """PhotoCraft's canvas only embedded the Japanese craft faces.
+
+    U+1F9D2 then fell through to `Noto Color Emoji`, whose CBDT glyphs have no
+    outline: skrifa returns None and the canvas draws nothing. Embed the glyf
+    craft emoji face and try it ahead of the colour-emoji families.
+    """
+    if "craft_fonts" not in text:
+        return text, False
+    changed = False
+    old = "    /// True for a Mincho (serif) face."
+    if old in text and "fn is_emoji" not in text:
+        text = text.replace(
+            old,
+            "    /// True for the craft emoji face (the manifest tags it `Zyyy`).\n"
+            "    pub fn is_emoji(&self) -> bool {\n"
+            '        self.scripts.contains(&"Zyyy")\n'
+            "    }\n\n" + old,
+            1,
+        )
+        changed = True
+    old = "        for f in crate::craft_fonts::CRAFT_FONTS.iter().filter(|f| f.is_japanese()) {"
+    new = "        for f in crate::craft_fonts::CRAFT_FONTS.iter().filter(|f| f.is_japanese() || f.is_emoji()) {"
+    if old in text:
+        text = text.replace(old, new, 1)
+        changed = True
+    old = 'const FALLBACK_LAST: &[&str] = &["Arial Unicode MS", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"];'
+    new = 'const FALLBACK_LAST: &[&str] = &["Noto Emoji", "Arial Unicode MS", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"];'
+    if old in text:
+        text = text.replace(old, new, 1)
+        changed = True
+    return text, changed
 
 
 OUTLINE_HELPER = '''
@@ -525,6 +572,7 @@ RULES = [
     patch_vector_search_ime,
     patch_load_hans_craft,
     patch_skip_cbdt,
+    patch_photocraft_canvas_emoji,
 ]
 
 
