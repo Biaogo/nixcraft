@@ -1,7 +1,7 @@
-# ArtCraft is Tauri + an npm/nx frontend, not the pure-Rust *Craft layout.
-# AUR builds the frontend first, then `cargo build --features tauri/custom-protocol`
-# so tauri-build embeds frontend/apps/artcraft/dist. `cargo tauri build` is worse
-# here: beforeBuildCommand runs from the crate dir, where `nx` is not the workspace.
+# ArtCraft is Tauri + an npm frontend, not the pure-Rust *Craft layout.
+# AUR runs `npx nx run artcraft:build`, then `cargo build --features tauri/custom-protocol`.
+# nx's native pty panics in the Nix sandbox, so call vite directly. tauri-build embeds
+# frontend/apps/artcraft/dist when the custom-protocol feature is on.
 {
   lib,
   stdenv,
@@ -14,6 +14,11 @@
   copyDesktopItems,
   makeDesktopItem,
   cargo-tauri,
+  cmake,
+  perl,
+  gitMinimal,
+  llvmPackages,
+  zlib,
   openssl,
   sqlite,
   dbus,
@@ -73,6 +78,10 @@ rustPlatform.buildRustPackage {
 
   nativeBuildInputs = [
     pkg-config
+    cmake
+    perl
+    gitMinimal
+    llvmPackages.libclang
     nodejs
     npmHooks.npmConfigHook
     wrapGAppsHook3
@@ -92,23 +101,32 @@ rustPlatform.buildRustPackage {
     pango
     libsoup_3
     webkitgtk_4_1
+    zlib
   ]
   ++ gstPlugins;
 
   env = {
     NIX_NPM_FETCHER_VERSION = "2";
     SQLX_OFFLINE = "true";
+    # boring-sys2 (wreq) runs bindgen against BoringSSL.
+    LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
+    BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${stdenv.cc.libc.dev}/include -isystem ${llvmPackages.libclang.lib}/lib/clang/${lib.versions.major llvmPackages.libclang.version}/include";
     # Upstream release profile is fat LTO; that OOMs. Match the AUR recipe.
     CARGO_PROFILE_RELEASE_LTO = "thin";
     VITE_ENVIRONMENT_TYPE = "production";
     NODE_OPTIONS = "--max-old-space-size=8192";
     NX_DAEMON = "false";
+    # nx's native pty panics in the sandbox (vt100 unwrap). The build target is vite.
+    CI = "true";
   };
 
   preBuild = ''
-    pushd frontend
-    npx nx run artcraft:build
+    pushd frontend/apps/artcraft
+    node ../../node_modules/vite/bin/vite.js build
     popd
+    # tauri-build runs this from the crate dir. Same pty panic, and dist is already built.
+    substituteInPlace crates/desktop/artcraft/tauri.conf.json \
+      --replace-fail '"beforeBuildCommand": "npx nx run artcraft:build"' '"beforeBuildCommand": "true"'
   '';
 
   postInstall = ''
