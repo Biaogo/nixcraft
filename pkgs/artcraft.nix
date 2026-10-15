@@ -130,6 +130,8 @@ rustPlatform.buildRustPackage {
   '';
 
   postInstall = ''
+    # The crate also emits a staticlib. The GUI binary is the product.
+    rm -rf $out/lib
     install -Dm644 crates/desktop/artcraft/icons/32x32.png \
       $out/share/icons/hicolor/32x32/apps/ai.artcraft.app.png
     install -Dm644 crates/desktop/artcraft/icons/128x128.png \
