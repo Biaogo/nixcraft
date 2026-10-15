@@ -141,7 +141,7 @@ rustPlatform.buildRustPackage (
     passthru = { inherit runtimeLibs; };
 
     postPatch = ''
-      python3 ${./nixos-fonts.py}
+      python3 ${./nixos-fonts.py} . ${lib.optionalString (craft-fonts != null) "${craft-fonts}/fonts/noto-emoji/NotoEmoji-Regular.ttf"}
     ''
     + extraPostPatch;
 

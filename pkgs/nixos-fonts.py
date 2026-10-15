@@ -208,48 +208,30 @@ def patch_pdf_discover(path, text):
 
 
 def patch_soundcraft(path, text):
-    if "fn load_from_fontconfig" not in text or "load_cjk_fallback" in text:
+    if "fn load_from_fontconfig" not in text or "system-han" in text:
         return text, False
-    old = '''    fonts.families.insert(FontFamily::Name("bold".into()), bold_family);
-    fonts
-}'''
-    new = '''    fonts.families.insert(FontFamily::Name("bold".into()), bold_family);
-    if let Some(cjk) = load_cjk_fallback() {
-        fonts.font_data.insert("cjk".into(), Arc::new(cjk));
-        for fam in [FontFamily::Proportional, FontFamily::Monospace, FontFamily::Name("bold".into())] {
-            if let Some(v) = fonts.families.get_mut(&fam) {
-                v.push("cjk".into());
-            }
+    old = '''    if let Some(h) = load(HANGUL, "sans-serif:lang=ko", Some("ko")) {
+        fonts.font_data.insert("system-hangul".into(), Arc::new(h));
+        for family in fonts.families.values_mut() {
+            family.push("system-hangul".into());
         }
     }
     fonts
-}
-
-/// Sans-serif fc-match is DejaVu on this desktop. It has no Han, so Chinese is the .notdef box
-/// unless a CJK face is also in the family. egui 0.36 draws CFF via skrifa, so the system
-/// Noto CJK TTC is usable. Index from fontconfig (SC is face 2 in the region-merged file).
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
-fn load_cjk_fallback() -> Option<FontData> {
-    let output = std::process::Command::new("fc-match").args(["--format=%{file}\\n%{index}\\n", "Noto Sans CJK SC"]).output().ok()?;
-    if !output.status.success() {
-        return None;
+}'''
+    new = '''    if let Some(h) = load(HANGUL, "sans-serif:lang=ko", Some("ko")) {
+        fonts.font_data.insert("system-hangul".into(), Arc::new(h));
+        for family in fonts.families.values_mut() {
+            family.push("system-hangul".into());
+        }
     }
-    let stdout = String::from_utf8(output.stdout).ok()?;
-    let mut lines = stdout.lines();
-    let path = lines.next()?.trim();
-    let index = lines.next()?.trim().parse::<u32>().ok()? & 0xFFFF;
-    let bytes = std::fs::read(path).ok()?;
-    if !matches!(bytes.get(..4), Some(b"\\0\\x01\\0\\0" | b"OTTO" | b"true" | b"ttcf")) {
-        return None;
+    // sans-serif is DejaVu here. It has no Han, so Chinese is a hollow box unless a CJK face is in the family.
+    if let Some(han) = load(&[], ":lang=zh-cn:charset=73b0", Some("zh-cn")) {
+        fonts.font_data.insert("system-han".into(), Arc::new(han));
+        for family in fonts.families.values_mut() {
+            family.push("system-han".into());
+        }
     }
-    let mut font = FontData::from_owned(bytes);
-    font.index = index;
-    Some(font)
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
-fn load_cjk_fallback() -> Option<FontData> {
-    None
+    fonts
 }'''
     if old not in text:
         return text, False
@@ -368,28 +350,38 @@ def patch_fc_match_charset(path, text):
     return text.replace(old, new), True
 
 
+def emoji_ttf():
+    if len(sys.argv) > 2 and sys.argv[2]:
+        return sys.argv[2]
+    return os.environ.get("NIXOS_EMOJI_TTF") or ""
+
+
 def patch_egui_child_emoji(path, text):
     """egui's bundled Noto Emoji has U+1F632 and not U+1F9D2. Append a glyf face that has it."""
-    if not os.environ.get("NIXOS_EMOJI_TTF") or "nixos-emoji" in text:
+    ttf = emoji_ttf()
+    if not ttf or "nixos-emoji" in text:
         return text, False
+    rust_path = ttf.replace("\\", "\\\\").replace('"', '\\"')
+    bytes_expr = f'include_bytes!("{rust_path}")'
     changed = False
-    old = "let mut fonts = FontDefinitions::default();"
-    insert = (
-        "let mut fonts = FontDefinitions::default();\n"
-        '    fonts.font_data.insert("nixos-emoji".into(), std::sync::Arc::new(egui::FontData::from_static(include_bytes!(env!("NIXOS_EMOJI_TTF")))));\n'
-        '    for stack in fonts.families.values_mut() { stack.push("nixos-emoji".into()); }'
-    )
-    if old in text:
+    for old in (
+        "let mut fonts = FontDefinitions::default();",
+        "let mut fonts = egui::FontDefinitions::default();",
+    ):
+        if old not in text:
+            continue
+        insert = (
+            old + "\n"
+            f'    fonts.font_data.insert("nixos-emoji".into(), std::sync::Arc::new(egui::FontData::from_static({bytes_expr})));\n'
+            '    for stack in fonts.families.values_mut() { stack.push("nixos-emoji".into()); }'
+        )
         text = text.replace(old, insert, 1)
         changed = True
+        break
     needle = '("emoji-icon-font", EMOJI_ICON.as_slice(), 0.90),'
     if needle in text and "nixos-emoji" not in text:
         text = text.replace("[(&str, &'static [u8], f32); 4]", "[(&str, &'static [u8], f32); 5]", 1)
-        text = text.replace(
-            needle,
-            needle + '\n        ("nixos-emoji", include_bytes!(env!("NIXOS_EMOJI_TTF")), 0.81),',
-            1,
-        )
+        text = text.replace(needle, needle + f'\n        ("nixos-emoji", {bytes_expr}, 0.81),', 1)
         text = text.replace(
             'stack(&["Ubuntu-Light", "NotoEmoji-Regular", "emoji-icon-font"])',
             'stack(&["Ubuntu-Light", "NotoEmoji-Regular", "emoji-icon-font", "nixos-emoji"])',
@@ -400,6 +392,46 @@ def patch_egui_child_emoji(path, text):
             'stack(&["Hack", "Ubuntu-Light", "NotoEmoji-Regular", "emoji-icon-font", "nixos-emoji"])',
             1,
         )
+        changed = True
+    return text, changed
+
+
+def patch_vector_search_ime(path, text):
+    """request_focus every frame resets text-input-v3 and fcitx dismisses."""
+    changed = False
+    old = '''pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
+    if !app.ui.palette_open {
+        return;
+    }'''
+    new = '''pub fn show(app: &mut VectorcraftApp, ctx: &egui::Context) {
+    if !app.ui.palette_open {
+        ctx.data_mut(|d| d.remove::<bool>(egui::Id::new("palette-ime-focus")));
+        return;
+    }'''
+    if old in text:
+        text = text.replace(old, new, 1)
+        changed = True
+    old = '''            let r = ui.add(egui::TextEdit::singleline(&mut app.ui.palette_query).hint_text(tl!("Search commands and tools…")).desired_width(500.0));
+            r.request_focus();'''
+    new = '''            let r = ui.add(egui::TextEdit::singleline(&mut app.ui.palette_query).hint_text(tl!("Search commands and tools…")).desired_width(500.0));
+            // Once per open. Every frame dismisses fcitx.
+            let ime = egui::Id::new("palette-ime-focus");
+            if !ui.data(|d| d.get_temp::<bool>(ime)).unwrap_or(false) {
+                r.request_focus();
+                ui.data_mut(|d| d.insert_temp(ime, true));
+            }'''
+    if old in text:
+        text = text.replace(old, new, 1)
+        changed = True
+    old = '''    if ui.memory(|m| m.focused().is_none()) {
+        ui.memory_mut(|m| m.request_focus(field.with("edit")));
+    }'''
+    new = '''    // The sizing pass has no widget yet. Focus once on the next frame, not every frame.
+    if pass == st.opened + 1 {
+        ui.memory_mut(|m| m.request_focus(field.with("edit")));
+    }'''
+    if old in text and "pass == st.opened + 1" not in text:
+        text = text.replace(old, new, 1)
         changed = True
     return text, changed
 
@@ -469,6 +501,7 @@ RULES = [
     patch_skip_cff_in_egui,
     patch_fc_match_charset,
     patch_egui_child_emoji,
+    patch_vector_search_ime,
     patch_load_hans_craft,
     patch_skip_cbdt,
 ]

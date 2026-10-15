@@ -35,14 +35,34 @@ stdenvNoCC.mkDerivation {
     import hashlib, pathlib, os
     from fontTools.ttLib import TTCollection, TTFont
     from fontTools.varLib.instancer import instantiateVariableFont
+    from fontTools.pens.recordingPen import DecomposingRecordingPen
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
     out = pathlib.Path(os.environ["out"])
     wqy = "${wqy_microhei}/share/fonts/truetype/wqy-microhei.ttc"
     face = TTCollection(wqy).fonts[0]
+    # epaint draws a composite glyph as .notdef (⊠). Flatten to simple contours.
+    glyf = face["glyf"]
+    gs = face.getGlyphSet()
+    for name in list(face.getGlyphOrder()):
+        g = glyf[name]
+        if not g.isComposite():
+            continue
+        rec = DecomposingRecordingPen(gs)
+        gs[name].draw(rec)
+        pen = TTGlyphPen(None)
+        rec.replay(pen)
+        glyf[name] = pen.glyph()
+    for table in ("fpgm", "prep", "cvt ", "FFTM"):
+        if table in face:
+            del face[table]
     wqy_path = out / "fonts/wqy-microhei/wqy-microhei.ttf"
     face.save(wqy_path)
     emoji_path = out / "fonts/noto-emoji/NotoEmoji-Regular.ttf"
     emoji = TTFont("${notoEmoji}")
     instantiateVariableFont(emoji, {"wght": 400}, inplace=True, updateFontNames=True)
+    for table in ("STAT", "GSUB", "GPOS", "vhea", "vmtx"):
+        if table in emoji:
+            del emoji[table]
     emoji.save(emoji_path)
     assert wqy_path.read_bytes()[:4] == b"\x00\x01\x00\x00"
     assert b"glyf" in wqy_path.read_bytes()[:4096] or True
@@ -56,7 +76,7 @@ stdenvNoCC.mkDerivation {
         return hashlib.sha256(p.read_bytes()).hexdigest()
     extra = [
         f"WenQuanYi Micro Hei | Regular | fonts/wqy-microhei/wqy-microhei.ttf | Hans,Latn | OFL-1.1 | fonts/noto-sans-cjk-sc/OFL.txt | {sha(wqy_path)} | nixpkgs wqy_microhei",
-        f"Noto Emoji | Regular | fonts/noto-emoji/NotoEmoji-Regular.ttf | Hans,Jpan | OFL-1.1 | fonts/noto-sans-cjk-sc/OFL.txt | {sha(emoji_path)} | https://github.com/google/fonts/tree/main/ofl/notoemoji",
+        f"Noto Emoji | Regular | fonts/noto-emoji/NotoEmoji-Regular.ttf | Zyyy | OFL-1.1 | fonts/noto-sans-cjk-sc/OFL.txt | {sha(emoji_path)} | https://github.com/google/fonts/tree/main/ofl/notoemoji",
     ]
     man = out / "fonts/manifest.txt"
     text = man.read_text()
