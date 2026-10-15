@@ -208,7 +208,7 @@ def patch_pdf_discover(path, text):
 
 
 def patch_soundcraft(path, text):
-    if "fn load_from_fontconfig" not in text or "system-han" in text:
+    if "fn load_from_fontconfig" not in text or "charset=73b0" in text:
         return text, False
     old = '''    if let Some(h) = load(HANGUL, "sans-serif:lang=ko", Some("ko")) {
         fonts.font_data.insert("system-hangul".into(), Arc::new(h));
@@ -225,7 +225,7 @@ def patch_soundcraft(path, text):
         }
     }
     // sans-serif is DejaVu here. It has no Han, so Chinese is a hollow box unless a CJK face is in the family.
-    if let Some(han) = load(&[], ":lang=zh-cn:charset=73b0", Some("zh-cn")) {
+    if let Some(han) = load(&[] as &[(&str, u32)], ":lang=zh-cn:charset=73b0", Some("zh-cn")) {
         fonts.font_data.insert("system-han".into(), Arc::new(han));
         for family in fonts.families.values_mut() {
             family.push("system-han".into());
@@ -396,6 +396,26 @@ def patch_egui_child_emoji(path, text):
     return text, changed
 
 
+def patch_fig_emoji_fallback(path, text):
+    """Canvas fallbacks never name Noto Emoji, so U+1F9D2 stays the missing-glyph box."""
+    changed = False
+    old = '''            "Apple Color Emoji",
+            "Noto Sans Arabic",'''
+    new = '''            "Apple Color Emoji",
+            "Noto Emoji",
+            "WenQuanYi Micro Hei",
+            "Noto Sans Arabic",'''
+    if old in text and '"Noto Emoji"' not in text:
+        text = text.replace(old, new, 1)
+        changed = True
+    old = 'const BUILT_IN: [&str; 4] = ["Inter", "BIZ UDPGothic", "Noto Sans CJK SC", "Noto Sans Arabic"];'
+    new = 'const BUILT_IN: [&str; 6] = ["Inter", "BIZ UDPGothic", "Noto Sans CJK SC", "Noto Sans Arabic", "Noto Emoji", "WenQuanYi Micro Hei"];'
+    if old in text:
+        text = text.replace(old, new, 1)
+        changed = True
+    return text, changed
+
+
 def patch_vector_search_ime(path, text):
     """request_focus every frame resets text-input-v3 and fcitx dismisses."""
     changed = False
@@ -501,6 +521,7 @@ RULES = [
     patch_skip_cff_in_egui,
     patch_fc_match_charset,
     patch_egui_child_emoji,
+    patch_fig_emoji_fallback,
     patch_vector_search_ime,
     patch_load_hans_craft,
     patch_skip_cbdt,

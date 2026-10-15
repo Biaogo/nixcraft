@@ -1,6 +1,6 @@
 # nixcraft
 
-用 Nix flake 打包 [storytold](https://github.com/storytold) 的 Craft 系列桌面应用（纯 Rust）。
+用 Nix flake 打包 [storytold](https://github.com/storytold) 的 Craft 系列桌面应用。除 ArtCraft（Tauri + npm）外均为纯 Rust。
 
 [English](README.en.md)
 
@@ -21,10 +21,11 @@
 | `deckcraft` | 演示文稿 |
 | `soundcraft` | 音频编辑 |
 | `figcraft` | 界面设计 |
+| `artcraft` | AI 图像与视频创作 IDE（Tauri + npm 前端，只有 GUI） |
 
-每个包通常提供 GUI 程序 `<名字>` 和命令行 / MCP 程序 `<名字>-cli`。`default` / `all` 是全部包的合集。
+除 `artcraft` 外，每个包通常提供 GUI 程序 `<名字>` 和命令行 / MCP 程序 `<名字>-cli`。`default` / `all` 是全部包的合集。
 
-未打包：`artcraft`（Tauri + npm 前端）、`artcraftx`、`craft-launcher`。Web（wasm）版本亦不包含。
+未打包：`artcraftx`、`craft-launcher`。Web（wasm）版本亦不包含。
 
 支持平台：`x86_64-linux`、`aarch64-linux`（CI 目前只构建前者）。
 

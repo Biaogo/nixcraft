@@ -60,6 +60,10 @@
       url = "github:storytold/figcraft";
       flake = false;
     };
+    artcraft-src = {
+      url = "github:storytold/artcraft";
+      flake = false;
+    };
   };
 
   outputs =
@@ -82,12 +86,16 @@
           craftFonts = pkgs.callPackage ./pkgs/craft-fonts-glyf.nix { inherit craft-fonts; };
           mkCraft = pkgs.callPackage ./pkgs/mk-craft.nix { craft-fonts = craftFonts; };
           each = lib.mapAttrs (name: spec: mkCraft ({ pname = name; } // spec)) specs;
+          artcraft = pkgs.callPackage ./pkgs/artcraft.nix { src = inputs.artcraft-src; };
+          named = each // {
+            inherit artcraft;
+          };
         in
-        each
+        named
         // {
           all = pkgs.symlinkJoin {
             name = "nixcraft-all";
-            paths = builtins.attrValues each;
+            paths = builtins.attrValues named;
           };
         };
       forAllSystems = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});

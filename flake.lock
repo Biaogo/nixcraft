@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "artcraft-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790419408,
+        "narHash": "sha256-kO4kHtU6cINVDpzxtTzq8s1nf8zqilHcJc7Fsi+iN0U=",
+        "owner": "storytold",
+        "repo": "artcraft",
+        "rev": "c3844acdadf630db0c17ec1d1512bcf6bbc1b4f9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "storytold",
+        "repo": "artcraft",
+        "type": "github"
+      }
+    },
     "cadcraft-src": {
       "flake": false,
       "locked": {
@@ -194,6 +210,7 @@
     },
     "root": {
       "inputs": {
+        "artcraft-src": "artcraft-src",
         "cadcraft-src": "cadcraft-src",
         "craft-fonts": "craft-fonts",
         "deckcraft-src": "deckcraft-src",

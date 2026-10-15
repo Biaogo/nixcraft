@@ -120,6 +120,7 @@ jobs:
           - deckcraft
           - soundcraft
           - figcraft
+          - artcraft
     steps:
       - name: Free disk space
         uses: jlumbroso/free-disk-space@v2.0.0
@@ -175,7 +176,7 @@ jobs:
           locked_rev=$(jq -r --arg n "$input" '.nodes[$n].locked.rev // empty' flake.lock)
           locked_ref=$(jq -r --arg n "$input" '.nodes[$n].original.ref // empty' flake.lock)
 
-          # Unauthenticated api.github.com is 60/hour per runner IP. A 13-way
+          # Unauthenticated api.github.com is 60/hour per runner IP. A 14-way
           # matrix 403s before FORCE can take effect. Fall back to a forced build.
           gh_get() {
             curl -fsSL \

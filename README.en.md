@@ -1,6 +1,6 @@
 # nixcraft
 
-Nix flake packaging of the [storytold](https://github.com/storytold) Craft desktop apps (pure Rust).
+Nix flake packaging of the [storytold](https://github.com/storytold) Craft desktop apps. Everything except ArtCraft (Tauri + npm) is pure Rust.
 
 [中文](README.md)
 
@@ -21,10 +21,11 @@ Nix flake packaging of the [storytold](https://github.com/storytold) Craft deskt
 | `deckcraft` | Presentation editor |
 | `soundcraft` | Audio editor |
 | `figcraft` | UI / interface design |
+| `artcraft` | IDE for interactive AI image and video creation (Tauri + npm frontend, GUI only) |
 
-Each package usually ships a GUI binary (`<name>`) and a CLI / MCP binary (`<name>-cli`). `default` / `all` is a symlinkJoin of every package.
+Except `artcraft`, each package usually ships a GUI binary (`<name>`) and a CLI / MCP binary (`<name>-cli`). `default` / `all` is a symlinkJoin of every package.
 
-Not packaged: `artcraft` (Tauri + npm frontend), `artcraftx`, `craft-launcher`. Web (wasm) builds are also omitted.
+Not packaged: `artcraftx`, `craft-launcher`. Web (wasm) builds are also omitted.
 
 Platforms: `x86_64-linux`, `aarch64-linux` (CI currently builds the former only).
 

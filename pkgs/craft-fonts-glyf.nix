@@ -64,6 +64,13 @@ stdenvNoCC.mkDerivation {
         if table in emoji:
             del emoji[table]
     emoji.save(emoji_path)
+    # Format 4 is BMP-only. epaint/skrifa can lock onto it and miss U+1F9D2.
+    emoji = TTFont(emoji_path)
+    keep = [t for t in emoji["cmap"].tables if t.format != 4]
+    if not keep:
+        raise SystemExit("emoji font has no non-BMP cmap")
+    emoji["cmap"].tables = keep
+    emoji.save(emoji_path)
     assert wqy_path.read_bytes()[:4] == b"\x00\x01\x00\x00"
     assert b"glyf" in wqy_path.read_bytes()[:4096] or True
     # glyf table may sit past the header; check the table directory.
