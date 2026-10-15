@@ -313,6 +313,28 @@ def patch_design_caret(path, text):
     return text.replace(old, new, 1), True
 
 
+def patch_design_search(path, text):
+    """The app bar's Search field is painted by hand and its response was dropped.
+
+    ``allocate_exact_size`` returns ``(Rect, Response)``; the app kept the Rect for
+    painting and bound the Response to ``_``, so a click on the field did nothing.
+    Bind it and open Quick Apply, the app's only search UI.
+    """
+    old = '''                        // Search field.
+                        let (r, _) = ui.allocate_exact_size(vec2(125.0, 18.0), Sense::click());'''
+    new = '''                        // Search field. The field is painted by hand, so its response is the
+                        // only thing that knows it was clicked; it opens Quick Apply (Cmd+Return).
+                        let (r, search_resp) = ui.allocate_exact_size(vec2(125.0, 18.0), Sense::click());
+                        if search_resp.clicked() {
+                            let _ = app.run("app.palette", json!(null));
+                        }'''
+    if new in text:
+        return text, False
+    if old not in text:
+        return text, False
+    return text.replace(old, new, 1), True
+
+
 def patch_film_focus(path, text):
     old = '''    ui.memory_mut(|m| {
         m.request_focus(eid);
@@ -564,6 +586,7 @@ RULES = [
     patch_deck_caret,
     patch_design_ime,
     patch_design_caret,
+    patch_design_search,
     patch_film_focus,
     patch_skip_cff_in_egui,
     patch_fc_match_charset,
