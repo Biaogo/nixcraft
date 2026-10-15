@@ -74,6 +74,12 @@ def patch_font_dirs(path, text):
         return text, False
     changed = False
     repls = [
+        # Upstream moved the unix branch into `fn unix_font_dirs` (2026-10-15, DesignCraft
+        # a930276): the list is built in one `let` with `Into::into`, not `extend`ed.
+        (
+            'let mut dirs: Vec<std::path::PathBuf> = ["/usr/share/fonts", "/usr/local/share/fonts"].map(Into::into).into();',
+            'let mut dirs: Vec<std::path::PathBuf> = ["/usr/share/fonts", "/usr/local/share/fonts"].map(Into::into).into();\n    dirs.extend(nixos_fontconfig_dirs());',
+        ),
         (
             'dirs.extend(["/usr/share/fonts", "/usr/local/share/fonts"].map(Into::into));',
             'dirs.extend(["/usr/share/fonts", "/usr/local/share/fonts"].map(Into::into));\n        dirs.extend(nixos_fontconfig_dirs());',
