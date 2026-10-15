@@ -146,11 +146,11 @@ rustPlatform.buildRustPackage (
     # that, so the egui fixes land in the crate every app compiles against
     # without patching a dozen call sites per app.
     prePatch = ''
-      python3 ${./craft-vendor-egui.py} "''${cargoDepsCopy:?cargoSetupPostUnpackHook did not run}"
+      python3 ${./patches/vendor-egui.py} "''${cargoDepsCopy:?cargoSetupPostUnpackHook did not run}"
     '';
 
     postPatch = ''
-      python3 ${./nixos-fonts.py} . ${lib.optionalString (craft-fonts != null) "${craft-fonts}/fonts/noto-emoji/NotoEmoji-Regular.ttf"}
+      python3 ${./patches}/engine.py . ${lib.optionalString (craft-fonts != null) "${craft-fonts}/fonts/noto-emoji/NotoEmoji-Regular.ttf"}
     ''
     + extraPostPatch;
 

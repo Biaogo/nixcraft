@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Patch the vendored egui that every *Craft app builds against.
 
-Usage: craft-vendor-egui.py <writable cargo vendor dir>
+Usage: vendor-egui.py <writable cargo vendor dir>
 
 The vendor dir is the writable copy nixpkgs' cargoSetupPostUnpackHook makes in
 the build tree (``$cargoDepsCopy``). ``importCargoLock`` writes
@@ -95,16 +95,16 @@ def patch_file(path, old, new, label):
     with open(path, encoding="utf-8", errors="surrogateescape") as handle:
         text = handle.read()
     if new in text:
-        print(f"craft-vendor-egui: {label} already patched")
+        print(f"vendor-egui: {label} already patched")
         return
     if text.count(old) != 1:
         raise SystemExit(
-            f"craft-vendor-egui: {label}: expected exactly one match in {path}, "
+            f"vendor-egui: {label}: expected exactly one match in {path}, "
             f"found {text.count(old)} - the vendored egui changed, re-check it"
         )
     with open(path, "w", encoding="utf-8", errors="surrogateescape") as handle:
         handle.write(text.replace(old, new))
-    print(f"craft-vendor-egui: patched {label} in {path}")
+    print(f"vendor-egui: patched {label} in {path}")
 
 
 def main(argv):
@@ -112,7 +112,7 @@ def main(argv):
         raise SystemExit(f"usage: {argv[0]} <cargo vendor dir>")
     vendor = argv[1]
     if not os.path.isdir(vendor):
-        raise SystemExit(f"craft-vendor-egui: no such directory: {vendor}")
+        raise SystemExit(f"vendor-egui: no such directory: {vendor}")
 
     crates = sorted(
         name
@@ -121,13 +121,13 @@ def main(argv):
         if name == "egui" or (name.startswith("egui-") and name[5:6].isdigit())
     )
     if not crates:
-        raise SystemExit(f"craft-vendor-egui: no egui crate under {vendor}")
+        raise SystemExit(f"vendor-egui: no egui crate under {vendor}")
     for crate in crates:
         memory = os.path.join(vendor, crate, "src", "memory", "mod.rs")
         context = os.path.join(vendor, crate, "src", "context.rs")
         for path in (memory, context):
             if not os.path.isfile(path):
-                raise SystemExit(f"craft-vendor-egui: missing {path}")
+                raise SystemExit(f"vendor-egui: missing {path}")
         patch_file(memory, MEMORY_REQUEST_FOCUS_OLD, MEMORY_REQUEST_FOCUS_NEW,
                    f"{crate} request_focus/IME")
         patch_file(context, CONTEXT_FOCUS_OLD, CONTEXT_FOCUS_NEW,

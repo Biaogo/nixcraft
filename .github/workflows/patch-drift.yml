@@ -1,13 +1,13 @@
 name: patch drift
 
-# pkgs/nixos-fonts.py rewrites upstream Rust sources with string needles. When storytold
+# pkgs/patches/*.py rewrite upstream Rust sources with string needles. When storytold
 # fixes or moves the code a needle points at, the patch becomes a silent no-op and a Craft
 # app quietly loses a fix. This compares every rule against the pinned revision in
 # flake.lock and against upstream's default branch.
 #
 # A red run means: read the upstream diff for the files named in the summary, and if the
-# fix landed upstream, delete that rule (or update its needle) in pkgs/nixos-fonts.py.
-# The vendored-egui rules in pkgs/craft-vendor-egui.py are not checked here: they already
+# fix landed upstream, delete that rule (or update its needle) in pkgs/patches/.
+# The vendored-egui rules in pkgs/patches/vendor-egui.py are not checked here: they already
 # fail the build loudly when the crate moves.
 
 on:

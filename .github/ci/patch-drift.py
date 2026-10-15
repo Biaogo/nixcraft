@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Which *Craft patches no longer match upstream?
 
-`pkgs/nixos-fonts.py` rewrites upstream Rust sources with plain string needles. A needle
+`pkgs/patches/*.py` rewrite upstream Rust sources with plain string needles. A needle
 that stops matching is a silent no-op in the build, so nothing tells us that storytold
 has fixed (or moved) the code we patch. This compares every rule against two trees:
 
@@ -15,10 +15,10 @@ Per rule and app:
   new      applies to `head` but not to `pinned`: a needle starts matching new upstream code
 
 `DRIFT` exits non-zero: read the upstream diff, and if the fix landed upstream, delete the
-rule from `pkgs/nixos-fonts.py` (and the vendored-egui ones from `craft-vendor-egui.py`).
+rule from its module in `pkgs/patches/` (and the vendored-egui ones from `vendor-egui.py`).
 `new` is reported but not fatal.
 
-The egui rules in `craft-vendor-egui.py` are not checked here: they already fail the build
+The egui rules in `vendor-egui.py` are not checked here: they already fail the build
 loudly ("expected exactly one match ... the vendored egui changed") when the crate moves.
 
 Usage: patch-drift.py [--apps photocraft,designcraft] [--cache-dir DIR] [--summary FILE]
@@ -30,13 +30,17 @@ import io
 import json
 import os
 import pathlib
+import sys
 import tarfile
 import time
 import urllib.error
 import urllib.request
 
+# Loading the patcher would otherwise drop __pycache__ next to it in the repo.
+sys.dont_write_bytecode = True
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
-PATCHER = REPO / "pkgs" / "nixos-fonts.py"
+PATCHER = REPO / "pkgs" / "patches" / "engine.py"
 LOCK = REPO / "flake.lock"
 UA = "nixcraft-patch-drift"
 
@@ -69,7 +73,7 @@ def request(url, *, api=False, retries=3) -> bytes:
 
 
 def load_patcher():
-    spec = importlib.util.spec_from_file_location("nixos_fonts", PATCHER)
+    spec = importlib.util.spec_from_file_location("craft_patches", PATCHER)
     if spec is None or spec.loader is None:
         raise SystemExit(f"cannot load {PATCHER}")
     mod = importlib.util.module_from_spec(spec)
