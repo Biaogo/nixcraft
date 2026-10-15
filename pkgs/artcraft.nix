@@ -39,7 +39,7 @@ let
     # Workspaces need packuments. The lockfile has one git+ssh dep (ccapture.js);
     # prefetch-npm-deps rewrites that to a GitHub tarball.
     fetcherVersion = 2;
-    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    hash = "sha256-MdPy2OlDsZKVE6lcKzUNvPzWAAalKgECWwcQjOyhMNc=";
   };
   gstPlugins = [
     cargo-tauri.gst-plugin
