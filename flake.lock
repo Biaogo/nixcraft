@@ -247,11 +247,11 @@
     "vectorcraft-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1791983133,
-        "narHash": "sha256-kATUMg2Bo8karh4swMByAg7E3BGg8lrpppEh3VT+oZ0=",
+        "lastModified": 1792150098,
+        "narHash": "sha256-8wlih5NQtcDBRBv7wJ+AQP3M5yHSAYpT+5xDEFiS4yY=",
         "owner": "storytold",
         "repo": "vectorcraft",
-        "rev": "0a33cff3f6e2a1e9e672f4c3816f58cd8d3d032e",
+        "rev": "8bc65329286dc1b84aa392997bb205613c3e96cb",
         "type": "github"
       },
       "original": {
