@@ -2,11 +2,13 @@ name: patch drift
 
 # pkgs/patches/*.py rewrite upstream Rust sources with string needles. When storytold
 # fixes or moves the code a needle points at, the patch becomes a silent no-op and a Craft
-# app quietly loses a fix. This compares every rule against the pinned revision in
-# flake.lock and against upstream's default branch.
+# app quietly loses a fix. This compares every rule against two trees: the pinned revision
+# in flake.lock and upstream's default branch.
 #
-# A red run means: read the upstream diff for the files named in the summary, and if the
-# fix landed upstream, delete that rule (or update its needle) in pkgs/patches/.
+# A red run means a rule has no needle in any app at either revision: delete it (or move it
+# to the new needle). A rule that still matches the pin but not upstream's main is reported
+# as `pending` and does not fail the run - the pin still applies it, so nothing is broken
+# yet; read the upstream diff before the bump that brings that fix in.
 # The vendored-egui rules in pkgs/patches/vendor-egui.py are not checked here: they already
 # fail the build loudly when the crate moves.
 
@@ -39,7 +41,7 @@ jobs:
           python3 .github/ci/patch-drift.py --summary patch-drift.md
         continue-on-error: true
 
-      - name: Report the drift
+      - name: Report the dead rules
         if: steps.check.outcome == 'failure' && hashFiles('patch-drift.md') != ''
         env:
           GH_TOKEN: ${{ github.token }}
@@ -55,6 +57,6 @@ jobs:
             gh issue create --title "$TITLE" --label patch-drift --body-file "$BODY" || gh issue create --title "$TITLE" --body-file "$BODY"
           fi
 
-      - name: Fail on drift
+      - name: Fail on a dead rule
         if: steps.check.outcome == 'failure'
         run: exit 1

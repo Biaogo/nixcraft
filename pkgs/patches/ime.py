@@ -1,44 +1,15 @@
 """Input methods: the fcitx5 commit event, the caret rect, and focus that never settles.
 
-DeckCraft / DesignCraft canvas editors only handle Event::Text, and fcitx5 commits arrive as
-Event::Ime. A caret that never publishes an IME rect leaves the candidate window with nothing
-to anchor to. Requesting focus on every frame interrupts composition on every frame, which
-dismisses fcitx5.
+DesignCraft's canvas editor only handles Event::Text, so fcitx5 commits arrive as Event::Ime
+and are dropped. A caret that never publishes an IME rect leaves the candidate window with
+nothing to anchor to. Requesting focus on every frame interrupts composition on every frame,
+which dismisses fcitx5.
+
+DeckCraft needed both of the first two: its v0.8 slide editor now runs its own ime_event
+(preedit, commit, end) and publishes IMEOutput from the caret itself, so its rules are gone.
+DesignCraft's v0.9 (unreleased at the time of writing) does the same; the two rules that
+still rewrite it are `pending` in the drift report and go when that release lands.
 """
-
-
-def patch_deck_ime(path, text):
-    old = "                egui::Event::Text(t) => {"
-    new = "                egui::Event::Text(t) | egui::Event::Ime(egui::ImeEvent::Commit(t)) => {"
-    if "fn keyboard" not in text or old not in text or "ImeEvent::Commit" in text:
-        return text, False
-    text = text.replace(old, new, 1)
-    return text, True
-
-
-def patch_deck_caret(path, text):
-    old = '''            if blink && let Some((cx, top, bot)) = l.caret(deckcraft_text::Pos { para: ts.caret.0, ch: ts.caret.1 }) {
-                let (p0, p1) = (xf.to_screen(m * Point::new(cx, top)), xf.to_screen(m * Point::new(cx, bot)));
-                painter.line_segment([p0, p1], Stroke::new(1.5, t.caret));
-            }'''
-    new = '''            if let Some((cx, top, bot)) = l.caret(deckcraft_text::Pos { para: ts.caret.0, ch: ts.caret.1 }) {
-                let (p0, p1) = (xf.to_screen(m * Point::new(cx, top)), xf.to_screen(m * Point::new(cx, bot)));
-                if blink {
-                    painter.line_segment([p0, p1], Stroke::new(1.5, t.caret));
-                }
-                let cr = egui::Rect::from_two_pos(p0, p1);
-                ui.ctx().output_mut(|o| {
-                    o.ime = Some(egui::output::IMEOutput {
-                        rect: cr,
-                        cursor_rect: cr,
-                        purpose: Default::default(),
-                        should_interrupt_composition: false,
-                    });
-                });
-            }'''
-    if old not in text:
-        return text, False
-    return text.replace(old, new, 1), True
 
 
 def patch_design_ime(path, text):
@@ -54,30 +25,46 @@ def patch_design_ime(path, text):
 
 
 def patch_design_caret(path, text):
-    old = '''        let blink = (painter.ctx().input(|i| i.time) * 1.6) as i64 % 2 == 0;
+    """Publish the caret rect so fcitx5 anchors the candidate window at it.
+
+    v0.8.0 paints the caret inside `if blink` and builds both endpoints there, so the rect
+    only exists while the caret is shown: lift the endpoints out, paint from them, and hand
+    the same rect to egui's IME output on every frame.
+    """
+    old = '''        let m = a * doc.text_xf(it);
+        let blink = (painter.ctx().input(|i| i.time) * 1.6) as i64 % 2 == 0;
         if blink {
-            let p0 = xf.to_screen(m * Point::new(x, bl - asc));
-            let p1 = xf.to_screen(m * Point::new(x, bl + desc));
+            // Type on a path: the caret stands across the path where it is along it.
+            let on = |p: Point| compose::PathTextMap::new(it, ft).map_or(p, |map| map.to_path(p));
+            let p0 = xf.to_screen(m * on(Point::new(x, bl - asc)));
+            let p1 = xf.to_screen(m * on(Point::new(x, bl + desc)));
             painter.line_segment([p0, p1], Stroke::new(1.0, Color32::BLACK));
         }
         painter.ctx().request_repaint_after(std::time::Duration::from_millis(330));'''
-    new = '''        let blink = (painter.ctx().input(|i| i.time) * 1.6) as i64 % 2 == 0;
-        let p0 = xf.to_screen(m * Point::new(x, bl - asc));
-        let p1 = xf.to_screen(m * Point::new(x, bl + desc));
+    new = '''        let m = a * doc.text_xf(it);
+        // Type on a path: the caret stands across the path where it is along it.
+        let on = |p: Point| compose::PathTextMap::new(it, ft).map_or(p, |map| map.to_path(p));
+        let p0 = xf.to_screen(m * on(Point::new(x, bl - asc)));
+        let p1 = xf.to_screen(m * on(Point::new(x, bl + desc)));
+        let blink = (painter.ctx().input(|i| i.time) * 1.6) as i64 % 2 == 0;
         if blink {
             painter.line_segment([p0, p1], Stroke::new(1.0, Color32::BLACK));
         }
-        let cr = egui::Rect::from_two_pos(p0, p1);
-        painter.ctx().output_mut(|o| {
-            o.ime = Some(egui::output::IMEOutput {
-                rect: cr,
-                cursor_rect: cr,
-                purpose: Default::default(),
-                should_interrupt_composition: false,
+        // The candidate window follows the caret; without a rect fcitx5 anchors it to the window.
+        // A focused widget (a dialog field, the palette) publishes its own - leave that one alone.
+        if painter.ctx().memory(|mem| mem.focused().is_none()) {
+            let cr = egui::Rect::from_two_pos(p0, p1).expand(1.0);
+            painter.ctx().output_mut(|o| {
+                o.ime = Some(egui::output::IMEOutput {
+                    rect: cr,
+                    cursor_rect: cr,
+                    purpose: egui::IMEPurpose::Normal,
+                    should_interrupt_composition: false,
+                });
             });
-        });
+        }
         painter.ctx().request_repaint_after(std::time::Duration::from_millis(330));'''
-    if old not in text:
+    if "The candidate window follows the caret" in text or old not in text:
         return text, False
     return text.replace(old, new, 1), True
 

@@ -38,8 +38,6 @@ RULES = [
     fonts.patch_pdf_han,
     fonts.patch_pdf_discover,
     fonts.patch_soundcraft,
-    ime.patch_deck_ime,
-    ime.patch_deck_caret,
     ime.patch_design_ime,
     ime.patch_design_caret,
     ui.patch_design_search,

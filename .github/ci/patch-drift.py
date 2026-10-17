@@ -10,13 +10,22 @@ has fixed (or moved) the code we patch. This compares every rule against two tre
 
 Per rule and app:
 
-  in use   applies to `head`: the code we patch is still there
-  DRIFT    applies to `pinned` but not to `head`: upstream changed or fixed that code
+  in use   applies to both `pinned` and `head`: the code we patch is still there
+  pending  applies to `pinned` but not to `head`: upstream changed or fixed that code on
+           main. The pin still needs the rule, so the build is fine until the next bump -
+           but read the upstream diff before that bump.
   new      applies to `head` but not to `pinned`: a needle starts matching new upstream code
 
-`DRIFT` exits non-zero: read the upstream diff, and if the fix landed upstream, delete the
-rule from its module in `pkgs/patches/` (and the vendored-egui ones from `vendor-egui.py`).
-`new` is reported but not fatal.
+  dead     applies to no app at either revision: the rule no longer has a needle anywhere.
+           Delete it from its module in `pkgs/patches/` (or move it to a new needle).
+
+Only `dead` exits non-zero. `pending` used to fail the run, which kept CI red for as long
+as an upstream fix sat on main unreleased - the pin still carried the needle, so nothing
+was actually broken. A `pending` rule becomes `dead` once the bump brings upstream's
+version in, and that is when it must be deleted.
+
+`dead` is only computed on a full scan: with `--apps` the trees of the other apps are not
+fetched, and a rule that only one of them carries would look dead.
 
 The egui rules in `vendor-egui.py` are not checked here: they already fail the build
 loudly ("expected exactly one match ... the vendored egui changed") when the crate moves.
@@ -164,8 +173,9 @@ def main():
         sources = {k: v for k, v in sources.items() if k in wanted}
 
     lines = []
-    drift = []
+    pending = []
     fresh = []
+    matched = {name: False for name, _ in rules}
     for app, src in sorted(sources.items()):
         branch, head = default_branch_head(src["owner"], src["repo"])
         pinned = tarball(cache, src["owner"], src["repo"], src["rev"], src["rev"][:12])
@@ -177,14 +187,15 @@ def main():
             at_head = applied(mod, fn, upstream)
             if not at_pin and not at_head:
                 continue
+            matched[name] = True
             if at_head and at_pin:
                 status, detail = "in use", ", ".join(sorted(set(at_head) & set(at_pin)) or at_head)
             elif at_head:
                 status, detail = "new", ", ".join(sorted(at_head))
                 fresh.append((app, name, detail))
             else:
-                status, detail = "DRIFT", ", ".join(sorted(at_pin))
-                drift.append((app, name, detail))
+                status, detail = "pending", ", ".join(sorted(at_pin))
+                pending.append((app, name, detail))
             rows.append(f"  {status:<7} {name:<26} {detail}")
         if rows:
             lines.append(head_line)
@@ -195,20 +206,29 @@ def main():
         else:
             print(f"{app}: no rule applies at either revision")
 
-    print(f"\n{len(sources)} apps checked, {len(drift)} drifted, {len(fresh)} newly matching")
-    for app, name, detail in drift:
-        print(f"DRIFT: {app}/{name} applied at the pinned revision and not at head ({detail}) - upstream fixed or moved it")
-    for app, name, detail in fresh:
-        print(f"NEW:   {app}/{name} matches upstream code it did not match before ({detail})")
+    # A rule with no needle in any app is cruft: upstream is past it, or the needle rotted.
+    # Only meaningful on a full scan - --apps leaves the other trees unfetched.
+    dead = [name for name, fn in rules if not matched[name]] if not args.apps else []
 
-    report = "\n".join(lines + ["", f"{len(sources)} apps checked, {len(drift)} drifted, {len(fresh)} newly matching"])
+    print(f"\n{len(sources)} apps checked, {len(pending)} pending the next bump, "
+          f"{len(fresh)} newly matching, {len(dead)} dead")
+    for app, name, detail in pending:
+        print(f"PENDING: {app}/{name} applies at the pinned revision and not at head ({detail}) - the pin still needs it; read the upstream diff before the bump")
+    for app, name, detail in fresh:
+        print(f"NEW:     {app}/{name} matches upstream code it did not match before ({detail})")
+    for name in dead:
+        print(f"DEAD:    {name} matches no app at the pinned revision or at head - delete the rule from pkgs/patches/")
+
+    summary = (f"{len(sources)} apps checked, {len(pending)} pending the next bump, "
+               f"{len(fresh)} newly matching, {len(dead)} dead")
+    report = "\n".join(lines + [""] + ([f"dead: {', '.join(dead)}"] if dead else []) + [summary])
     if args.summary:
         pathlib.Path(args.summary).write_text(report + "\n")
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if step_summary and not args.summary:
         with open(step_summary, "a", encoding="utf-8") as fh:
             fh.write("## Patch drift\n\n```\n" + report + "\n```\n")
-    return 1 if drift else 0
+    return 1 if dead else 0
 
 
 if __name__ == "__main__":
