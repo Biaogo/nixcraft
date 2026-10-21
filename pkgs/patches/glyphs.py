@@ -6,6 +6,7 @@ show" or as a cross-in-a-cell, and each needs its own fix.
 """
 
 import os
+import re
 import sys
 
 
@@ -66,22 +67,54 @@ def patch_egui_child_emoji(path, text):
 
 
 def patch_fig_emoji_fallback(path, text):
-    """Canvas fallbacks never name Noto Emoji, so U+1F9D2 stays the missing-glyph box."""
+    """Without these monochrome faces, U+1F9D2 stays the canvas's missing-glyph box."""
+    families = ('"Noto Emoji"', '"WenQuanYi Micro Hei"')
     changed = False
-    old = '''            "Apple Color Emoji",
-            "Noto Sans Arabic",'''
-    new = '''            "Apple Color Emoji",
-            "Noto Emoji",
-            "WenQuanYi Micro Hei",
-            "Noto Sans Arabic",'''
-    if old in text and '"Noto Emoji"' not in text:
-        text = text.replace(old, new, 1)
-        changed = True
-    old = 'const BUILT_IN: [&str; 4] = ["Inter", "BIZ UDPGothic", "Noto Sans CJK SC", "Noto Sans Arabic"];'
-    new = 'const BUILT_IN: [&str; 6] = ["Inter", "BIZ UDPGothic", "Noto Sans CJK SC", "Noto Sans Arabic", "Noto Emoji", "WenQuanYi Micro Hei"];'
-    if old in text:
-        text = text.replace(old, new, 1)
-        changed = True
+
+    fallbacks = re.finditer(
+        r"const FALLBACK_FAMILIES: \[&str; (\d+)\] = \[(.*?)\];",
+        text,
+        re.S,
+    )
+    for fallback in fallbacks:
+        body = fallback.group(2)
+        needle = '    "Noto Sans Arabic"'
+        if '"Noto Sans Arabic"' not in body:
+            continue
+        if '"Noto Emoji"' not in body and needle in body:
+            inserted = (
+                '    "Noto Emoji",\n'
+                '    "WenQuanYi Micro Hei",\n'
+                + needle
+            )
+            body = body.replace(needle, inserted, 1)
+            declaration = (
+                f"const FALLBACK_FAMILIES: [&str; {int(fallback.group(1)) + len(families)}] = ["
+                f"{body}];"
+            )
+            text = text[:fallback.start()] + declaration + text[fallback.end():]
+            changed = True
+        break
+
+    built_ins = re.finditer(
+        r"const BUILT_IN: \[&str; (\d+)\] = \[(.*?)\];",
+        text,
+        re.S,
+    )
+    for built_in in built_ins:
+        body = built_in.group(2)
+        if '"BIZ UDPGothic"' not in body:
+            continue
+        if '"Noto Emoji"' not in body:
+            separator = " " if body.endswith(",") else ", "
+            declaration = (
+                f"const BUILT_IN: [&str; {int(built_in.group(1)) + len(families)}] = ["
+                f'{body}{separator}{", ".join(families)}];'
+            )
+            text = text[:built_in.start()] + declaration + text[built_in.end():]
+            changed = True
+        break
+
     return text, changed
 
 

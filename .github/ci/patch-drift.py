@@ -3,10 +3,13 @@
 
 `pkgs/patches/*.py` rewrite upstream Rust sources with plain string needles. A needle
 that stops matching is a silent no-op in the build, so nothing tells us that storytold
-has fixed (or moved) the code we patch. This compares every rule against two trees:
+has fixed (or moved) the code we patch. This compares every rule against two trees of
+every app that `pkgs/mk-craft.nix` patches (the packages defined by `pkgs/default.nix`):
 
   pinned  the revision in flake.lock - what the packages build from today
   head    the upstream default branch - what the next `nix flake update` will build from
+
+An input that is built another way, such as `artcraft`, is skipped rather than reported.
 
 Per rule and app:
 
@@ -39,6 +42,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import tarfile
 import time
@@ -91,6 +95,15 @@ def load_patcher():
     # only has to be non-empty for a rule to fire, and the drift run never builds.
     os.environ.setdefault("NIXOS_EMOJI_TTF", "/nix/store/emoji/NotoEmoji-Regular.ttf")
     return mod
+
+
+def mk_craft_packages():
+    """The package names defined at the top level of pkgs/default.nix."""
+    text = (REPO / "pkgs" / "default.nix").read_text(encoding="utf-8")
+    packages = set(re.findall(r"^  ([A-Za-z0-9_]+) = \{", text, re.M))
+    if not packages:
+        raise SystemExit("no packages found in pkgs/default.nix")
+    return packages
 
 
 def locked_sources():
@@ -157,22 +170,36 @@ def applied(mod, fn, tree):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--apps", help="comma-separated subset (default: every input in flake.lock)")
+    ap.add_argument(
+        "--apps",
+        help="comma-separated subset (default: every app in pkgs/default.nix)",
+    )
     ap.add_argument("--cache-dir", default=os.environ.get("PATCH_DRIFT_CACHE", str(pathlib.Path.home() / ".cache" / "nixcraft-patch-drift")))
     ap.add_argument("--summary", help="write the report here as markdown (also $GITHUB_STEP_SUMMARY when set)")
     args = ap.parse_args()
 
     mod = load_patcher()
     rules = [(fn.__name__, fn) for fn in mod.RULES]
-    cache = pathlib.Path(args.cache_dir)
-    cache.mkdir(parents=True, exist_ok=True)
 
-    sources = locked_sources()
+    packages = mk_craft_packages()
+    locked = locked_sources()
+    skipped = sorted(
+        name for name in locked if name != "craft-fonts" and name not in packages
+    )
+    skipped_line = (
+        f"skipped (not built through mk-craft): {', '.join(skipped)}" if skipped else ""
+    )
+    if skipped_line:
+        print(skipped_line)
+    sources = {name: src for name, src in locked.items() if name in packages}
     if args.apps:
         wanted = {a.strip() for a in args.apps.split(",") if a.strip()}
         sources = {k: v for k, v in sources.items() if k in wanted}
 
-    lines = []
+    cache = pathlib.Path(args.cache_dir)
+    cache.mkdir(parents=True, exist_ok=True)
+
+    lines = [skipped_line] if skipped_line else []
     pending = []
     fresh = []
     matched = {name: False for name, _ in rules}

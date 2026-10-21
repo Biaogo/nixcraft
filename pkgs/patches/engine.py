@@ -4,8 +4,7 @@ Rules live in the sibling modules, one per concern:
 
   fonts.py    fontconfig discovery and the CJK faces (spaces, boxes, tofu)
   glyphs.py   emoji and the faces egui or the canvas must not pick
-  ime.py      fcitx5 commits, the caret rect, focus that re-requests every frame
-  ui.py       widgets the app paints by hand
+  ime.py      focus that re-requests every frame
 
 Usage: engine.py <source root> [emoji ttf]
 
@@ -20,7 +19,7 @@ import sys
 # Loaded by path (the drift checker) as well as run as a script: make the siblings importable.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import fonts, glyphs, ime, ui
+import fonts, glyphs, ime
 
 
 def walk_rs(root):
@@ -38,9 +37,6 @@ RULES = [
     fonts.patch_pdf_han,
     fonts.patch_pdf_discover,
     fonts.patch_soundcraft,
-    ime.patch_design_ime,
-    ime.patch_design_caret,
-    ui.patch_design_search,
     ime.patch_film_focus,
     glyphs.patch_skip_cff_in_egui,
     fonts.patch_fc_match_charset,
