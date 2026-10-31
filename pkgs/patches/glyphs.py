@@ -30,6 +30,7 @@ def patch_egui_child_emoji(path, text):
     ttf = emoji_ttf()
     if not ttf or "nixos-emoji" in text:
         return text, False
+    original = text
     rust_path = ttf.replace("\\", "\\\\").replace('"', '\\"')
     bytes_expr = f'include_bytes!("{rust_path}")'
     changed = False
@@ -50,7 +51,15 @@ def patch_egui_child_emoji(path, text):
         break
     needle = '("emoji-icon-font", EMOJI_ICON.as_slice(), 0.90),'
     if needle in text and "nixos-emoji" not in text:
-        text = text.replace("[(&str, &'static [u8], f32); 4]", "[(&str, &'static [u8], f32); 5]", 1)
+        needle_pos = text.find(needle)
+        declarations = list(
+            re.finditer(r"\[\(&str, &'static \[u8\], f32\); (\d+)\]", text[:needle_pos])
+        )
+        if not declarations:
+            return original, False
+        declaration = declarations[-1]
+        bumped = f"[(&str, &'static [u8], f32); {int(declaration.group(1)) + 1}]"
+        text = text[:declaration.start()] + bumped + text[declaration.end():]
         text = text.replace(needle, needle + f'\n        ("nixos-emoji", {bytes_expr}, 0.81),', 1)
         text = text.replace(
             'stack(&["Ubuntu-Light", "NotoEmoji-Regular", "emoji-icon-font"])',

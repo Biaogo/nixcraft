@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove Cargo patch entries for crates that are absent from the vendor tree.
+"""Remove unused Cargo patch entries for crates absent from the vendor tree.
 
 Starting with wordcraft v0.12.0, the apps' Cargo.toml files redirect many
 crates to git forks through [patch.crates-io]. Some of those crates are not in
@@ -8,6 +8,9 @@ patch source against the vendor directory provided by Nix and fails resolution
 when a matching crate is missing. Dropping a patch entry for a crate that the
 lock never resolves does not change the build, so this script removes exactly
 those unused entries while keeping patches for vendored crates intact.
+
+Path patches are local sources and are never pruned. A git patch is pruned
+only when Cargo.lock itself marks that patch unused.
 
 Cargo records patches it did not use as [[patch.unused]] entries in
 Cargo.lock. Removing a Cargo.toml patch without removing its lock record makes
@@ -26,6 +29,31 @@ BARE_KEY_RE = re.compile(r"^(?P<name>[A-Za-z0-9_-]+)\s*=")
 TABLE_RE = re.compile(r"^\[(?P<table>patch\.[^\]]+)\]")
 LOCK_KEY_RE = re.compile(rb"^[A-Za-z0-9_-]+\s*=")
 LOCK_NAME_RE = re.compile(rb'^name\s*=\s*"(?P<name>[^"]+)"\s*$')
+
+
+def read_patch_unused_names(path):
+    try:
+        with open(path, "rb") as handle:
+            lines = handle.readlines()
+    except FileNotFoundError:
+        return set()
+
+    names = set()
+    index = 0
+    while index < len(lines):
+        if lines[index].rstrip(b"\r\n") != b"[[patch.unused]]":
+            index += 1
+            continue
+
+        end = index + 1
+        while end < len(lines) and LOCK_KEY_RE.match(lines[end]):
+            match = LOCK_NAME_RE.match(lines[end].rstrip(b"\r\n"))
+            if match:
+                names.add(match.group("name").decode("ascii"))
+            end += 1
+        index = end
+
+    return names
 
 
 def prune_lock(path, dropped_names, source_root):
@@ -98,6 +126,9 @@ def main(argv):
         if not any(line.startswith("[patch") for line in lines):
             continue
 
+        unused_patch_names = read_patch_unused_names(
+            os.path.join(directory, "Cargo.lock")
+        )
         table = None
         kept = []
         dropped = []
@@ -110,10 +141,24 @@ def main(argv):
                 match = ENTRY_RE.match(line)
                 if match and line.rstrip().endswith("}"):
                     name = match.group("name")
-                    if not any(
+                    is_vendored = any(
                         vendor_name.startswith(f"{name}-")
                         for vendor_name in vendor_dirs
-                    ):
+                    )
+                    if "path = " in line:
+                        pass
+                    elif "git = " in line and not is_vendored:
+                        if name not in unused_patch_names:
+                            relpath = os.path.relpath(path, source_root)
+                            raise SystemExit(
+                                f"cargo-patch-prune: {relpath}: {name} is "
+                                "patched from git but neither vendored nor "
+                                "[[patch.unused]] in Cargo.lock - inspect it "
+                                "before pruning"
+                            )
+                        dropped.append((name, table))
+                        continue
+                    elif not is_vendored:
                         dropped.append((name, table))
                         continue
                 elif match or (bare_key := BARE_KEY_RE.match(line)):
