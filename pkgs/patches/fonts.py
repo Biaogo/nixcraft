@@ -92,20 +92,28 @@ def patch_font_dirs(path, text):
 
 
 def patch_gridcraft(path, text):
-    if "fn cjk_han_simplified" not in text or "nixos_fontconfig_dirs" in text:
+    """GridCraft picks one region-merged TTC per locale; its FHS list has no nix store dirs."""
+    if "fn noto_cjk" not in text or "nixos_fontconfig_dirs" in text:
         return text, False
     old = '''    for d in LINUX_CJK_DIRS {
-        v.push((format!("{d}/NotoSansCJKsc-Regular.otf"), 0));
-        v.push((format!("{d}/NotoSansCJK-Regular.ttc"), 2)); // SC face
+        v.push((format!("{d}/NotoSansCJK{locale}-Regular.otf"), 0));
+        v.push((format!("{d}/NotoSansCJK-Regular.ttc"), face));
     }'''
     new = old + '''
+    // Roots are the directories fontconfig resolved (/nix/store/<hash>-noto-fonts-cjk-sans-<ver>
+    // /share/fonts/opentype/noto-cjk), so the faces usually sit directly under one.
     for root in nixos_fontconfig_dirs() {
-        let ttc = root.join("share/fonts/opentype/noto-cjk/NotoSansCJK-Regular.ttc");
-        let flat = root.join("NotoSansCJK-Regular.ttc");
-        let nested = root.join("opentype/noto-cjk/NotoSansCJK-Regular.ttc");
-        for p in [ttc, nested, flat] {
-            if p.is_file() {
-                v.push((p.display().to_string(), 2)); // SC face in the region-merged TTC
+        let otf = root.join(format!("NotoSansCJK{locale}-Regular.otf"));
+        if otf.is_file() {
+            v.push((otf.display().to_string(), 0));
+        }
+        for ttc in [
+            root.join("NotoSansCJK-Regular.ttc"),
+            root.join("share/fonts/opentype/noto-cjk/NotoSansCJK-Regular.ttc"),
+            root.join("opentype/noto-cjk/NotoSansCJK-Regular.ttc"),
+        ] {
+            if ttc.is_file() {
+                v.push((ttc.display().to_string(), face));
             }
         }
     }'''
@@ -191,9 +199,10 @@ def patch_pdf_discover(path, text):
 
 
 def patch_soundcraft(path, text):
-    if "fn load_from_fontconfig" not in text or "charset=73b0" in text:
+    """sans-serif is DejaVu here; it has no Han, so Chinese is a hollow box without a probe."""
+    if "fn load_from_fontconfig" not in text or '"system-han".into()' in text:
         return text, False
-    old = '''    if let Some(h) = load(HANGUL, "sans-serif:lang=ko", Some("ko")) {
+    old = '''    if let Some(h) = load(HANGUL, "sans-serif:lang=ko", Some("ko"), system_fonts) {
         fonts.font_data.insert("system-hangul".into(), Arc::new(h));
         for family in fonts.families.values_mut() {
             family.push("system-hangul".into());
@@ -201,14 +210,8 @@ def patch_soundcraft(path, text):
     }
     fonts
 }'''
-    new = '''    if let Some(h) = load(HANGUL, "sans-serif:lang=ko", Some("ko")) {
-        fonts.font_data.insert("system-hangul".into(), Arc::new(h));
-        for family in fonts.families.values_mut() {
-            family.push("system-hangul".into());
-        }
-    }
-    // sans-serif is DejaVu here. It has no Han, so Chinese is a hollow box unless a CJK face is in the family.
-    if let Some(han) = load(&[] as &[(&str, u32)], ":lang=zh-cn:charset=73b0", Some("zh-cn")) {
+    han = '''    // fc-match without a charset probe answers with DejaVu, which has no Han glyph.
+    if let Some(han) = load(&[] as &[(&str, u32)], ":lang=zh-cn:charset=73b0", Some("zh-cn"), system_fonts) {
         fonts.font_data.insert("system-han".into(), Arc::new(han));
         for family in fonts.families.values_mut() {
             family.push("system-han".into());
@@ -216,18 +219,16 @@ def patch_soundcraft(path, text):
     }
     fonts
 }'''
+    new = old.replace("    fonts\n}", "") + han
     if old not in text:
         return text, False
     return text.replace(old, new, 1), True
 
 
 def patch_load_hans_craft(path, text):
-    """Canvas FontDb only embedded Japanese craft-fonts. Simplified Chinese never entered the fallback."""
-    old = "let craft = crate::japanese_document_fonts().into_iter().map(|f| f.bytes);"
-    new = (
-        "let craft = crate::japanese_document_fonts().into_iter().chain(crate::CRAFT_FONTS.iter()"
-        '.filter(|f| f.scripts.contains(&"Hans") || f.scripts.contains(&"Zyyy"))).map(|f| f.bytes);'
-    )
+    """The embedded craft chain lists Hebrew and Devanagari; the Hans face ships but is never loaded."""
+    old = '''                ["Noto Sans Hebrew", "Noto Sans Devanagari"]'''
+    new = '''                ["Noto Sans CJK SC", "Noto Sans Hebrew", "Noto Sans Devanagari"]'''
     if old not in text:
         return text, False
     return text.replace(old, new, 1), True
