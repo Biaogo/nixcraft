@@ -8,7 +8,12 @@ the build tree (``$cargoDepsCopy``). ``importCargoLock`` writes
 ``{"files":{},...}`` as the crate checksum file, so editing files here does not
 break cargo's verification.
 
-Two egui 0.36.2 behaviours break the apps on NixOS/Wayland:
+egui 0.36.2 needs both rules on NixOS/Wayland, while egui 0.37.0 (crates.io,
+and the storytold/egui fork the apps pin from v0.12.0 on) already contains both
+fixes - request_focus only interrupts the IME when focus actually changes, and
+the accesskit TreeUpdate drops a focus id with no node. The rules are therefore
+kept only to keep older pins building, and the script skips a rule whose
+upstream-fixed form is already present instead of failing.
 
 1. ``Memory::request_focus`` calls ``interrupt_ime()`` unconditionally, and
    therefore also on a no-op re-request. Several dialogs (GridCraft's command
@@ -56,6 +61,14 @@ MEMORY_REQUEST_FOCUS_NEW = """    /// Give keyboard focus to a specific widget.
     }
 """
 
+MEMORY_REQUEST_FOCUS_FIXED = """    pub fn request_focus(&mut self, id: Id) {
+        if self.focused() != Some(id) {
+            self.interrupt_ime();
+        }
+        self.focus_mut().focused_widget = Some(FocusWidget::new(id));
+    }
+"""
+
 CONTEXT_FOCUS_OLD = """                let nodes = {
                     state
                         .nodes
@@ -68,6 +81,12 @@ CONTEXT_FOCUS_OLD = """                let nodes = {
                     .focused()
                     .map_or(root_id, |id| id.accesskit_id());
 """
+
+CONTEXT_FOCUS_FIXED = """                let focus_id = self
+                    .memory
+                    .focused()
+                    .filter(|id| state.nodes.contains_key(id))
+                    .map_or(root_id, |id| id.accesskit_id());"""
 
 CONTEXT_FOCUS_NEW = """                // The explicit type keeps inference happy now that `nodes` is read before it is
                 // moved into the update below.
@@ -91,16 +110,20 @@ CONTEXT_FOCUS_NEW = """                // The explicit type keeps inference happ
 """
 
 
-def patch_file(path, old, new, label):
+def patch_file(old, new, fixed, label, path):
     with open(path, encoding="utf-8", errors="surrogateescape") as handle:
         text = handle.read()
     if new in text:
         print(f"vendor-egui: {label} already patched")
         return
-    if text.count(old) != 1:
+    if fixed in text:
+        print(f"vendor-egui: {label} fixed upstream, nothing to patch")
+        return
+    n = text.count(old)
+    if n != 1:
         raise SystemExit(
             f"vendor-egui: {label}: expected exactly one match in {path}, "
-            f"found {text.count(old)} - the vendored egui changed, re-check it"
+            f"found {n} - the vendored egui changed, re-check it"
         )
     with open(path, "w", encoding="utf-8", errors="surrogateescape") as handle:
         handle.write(text.replace(old, new))
@@ -128,10 +151,20 @@ def main(argv):
         for path in (memory, context):
             if not os.path.isfile(path):
                 raise SystemExit(f"vendor-egui: missing {path}")
-        patch_file(memory, MEMORY_REQUEST_FOCUS_OLD, MEMORY_REQUEST_FOCUS_NEW,
-                   f"{crate} request_focus/IME")
-        patch_file(context, CONTEXT_FOCUS_OLD, CONTEXT_FOCUS_NEW,
-                   f"{crate} accesskit focus")
+        patch_file(
+            MEMORY_REQUEST_FOCUS_OLD,
+            MEMORY_REQUEST_FOCUS_NEW,
+            MEMORY_REQUEST_FOCUS_FIXED,
+            f"{crate} request_focus/IME",
+            memory,
+        )
+        patch_file(
+            CONTEXT_FOCUS_OLD,
+            CONTEXT_FOCUS_NEW,
+            CONTEXT_FOCUS_FIXED,
+            f"{crate} accesskit focus",
+            context,
+        )
 
 
 if __name__ == "__main__":

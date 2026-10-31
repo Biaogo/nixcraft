@@ -144,13 +144,18 @@ rustPlatform.buildRustPackage (
     # vendored crates in the build tree and exports it as $cargoDepsCopy. It is
     # unset again by cargoSetupPostPatchHook, but prePatch still runs before
     # that, so the egui fixes land in the crate every app compiles against
-    # without patching a dozen call sites per app.
+    # without patching a dozen call sites per app. Cargo also validates [patch]
+    # entries against the vendor dir, so entries for crates the lock does not
+    # use are dropped before resolution fails because they were not vendored.
     prePatch = ''
       python3 ${./patches/vendor-egui.py} "''${cargoDepsCopy:?cargoSetupPostUnpackHook did not run}"
+      python3 ${./patches}/cargo-patch-prune.py . "''${cargoDepsCopy:?cargoSetupPostUnpackHook did not run}"
     '';
 
     postPatch = ''
-      python3 ${./patches}/engine.py . ${lib.optionalString (craft-fonts != null) "${craft-fonts}/fonts/noto-emoji/NotoEmoji-Regular.ttf"}
+      python3 ${./patches}/engine.py . ${
+        lib.optionalString (craft-fonts != null) "${craft-fonts}/fonts/noto-emoji/NotoEmoji-Regular.ttf"
+      }
     ''
     + extraPostPatch;
 
