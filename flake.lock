@@ -3,11 +3,11 @@
     "artcraft-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1790419408,
-        "narHash": "sha256-kO4kHtU6cINVDpzxtTzq8s1nf8zqilHcJc7Fsi+iN0U=",
+        "lastModified": 1794019011,
+        "narHash": "sha256-nQFYSHRZFT5TZlDGj3/NG8DYprkoOfK5D+KQuyP4u0A=",
         "owner": "storytold",
         "repo": "artcraft",
-        "rev": "c3844acdadf630db0c17ec1d1512bcf6bbc1b4f9",
+        "rev": "07ebde1454d4bc99f0d9add90618fb4d871f6b1d",
         "type": "github"
       },
       "original": {
