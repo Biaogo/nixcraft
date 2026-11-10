@@ -1,6 +1,6 @@
 # nixcraft
 
-Nix flake packaging of the [storytold](https://github.com/storytold) Craft desktop apps. Everything except ArtCraft (Tauri + npm) is pure Rust.
+Nix flake packaging of the Craft desktop apps. storytold packages come from `github:storytold/<pkg>`; `solidcraft` comes from [Tangency Labs](https://github.com/tangency-labs/solidcraft) (community app). Everything except ArtCraft (Tauri + npm) is pure Rust.
 
 [中文](README.md)
 
@@ -85,7 +85,7 @@ The public key comes from the [Cachix API](https://cachix.org/api/v1/cache/biaog
 - **Triggers:** daily at **00:00 Asia/Shanghai**, `workflow_dispatch`, and pushes to `main` (ignores commits that only touch `flake.lock`)
 - **`force`:** build and `cachix push` / `pin` even when already on the latest Release; does **not** change per-package lock entries
 - **`bump_nixpkgs`:** scheduled runs **always** run `nix flake update nixpkgs`; on `workflow_dispatch` only when checked. A bump rebuilds and pushes every package (like force) and commits the new nixpkgs lock via `commit-lock` (`[skip ci]`). Independent of `force`; both can be enabled together
-- **Per package:** fetch the latest GitHub Release of `storytold/<pkg>`; skip if it matches the pin and neither force nor bump is on; otherwise lock to that tag, build, push, and pin
+- **Per package:** fetch the latest GitHub Release of `storytold/<pkg>`, or `tangency-labs/solidcraft` for `solidcraft`. Skip if it matches the pin and neither force nor bump is on; otherwise lock to that tag, build, push, and pin
 - **Cachix secret:** if a build runs and `CACHIX_AUTH_TOKEN` is missing, the push step **fails**. Cancel and re-dispatch (optionally with force / bump_nixpkgs)
 - **Commit-back:** `commit-lock` merges package lock nodes that changed plus the nixpkgs node when bumped, then pushes as github-actions[bot]
 

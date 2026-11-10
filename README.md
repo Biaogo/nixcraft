@@ -1,6 +1,6 @@
 # nixcraft
 
-用 Nix flake 打包 [storytold](https://github.com/storytold) 的 Craft 系列桌面应用。除 ArtCraft（Tauri + npm）外均为纯 Rust。
+用 Nix flake 打包 Craft 系列桌面应用。storytold 的包走 `github:storytold/<包>`；`solidcraft` 来自 [Tangency Labs](https://github.com/tangency-labs/solidcraft)（社区应用）。除 ArtCraft（Tauri + npm）外均为纯 Rust。
 
 [English](README.en.md)
 
@@ -85,7 +85,7 @@ nix.settings = {
 - **触发**：每天 **00:00（Asia/Shanghai）**、`workflow_dispatch`、push 到 `main`（忽略只改 `flake.lock` 的提交）
 - **`force`**：即使已是最新 GitHub Release，也会构建并 `cachix push` / `pin`；**不会**改各包源的 lock 条目
 - **`bump_nixpkgs`**：定时任务**总会**执行 `nix flake update nixpkgs`；手动运行仅在勾选时执行。bump 会像 force 一样重建并推送全部包，并把新的 nixpkgs 锁经 `commit-lock` 写回（提交信息含 `[skip ci]`）。与 `force` 相互独立，可同时勾选
-- **包源**：查询 `storytold/<包>` 最新 Release；与锁相同且未 force/bump 则跳过；有新版本则锁到该 tag，再构建、push、pin
+- **包源**：多数包查询 `storytold/<包>` 最新 Release；`solidcraft` 查询 `tangency-labs/solidcraft`。与锁相同且未 force/bump 则跳过；有新版本则锁到该 tag，再构建、push、pin
 - **Cachix**：构建实际发生时若缺少 `CACHIX_AUTH_TOKEN`，推送步骤会失败。请取消后重新 `workflow_dispatch`（可开 force / bump_nixpkgs）
 - **回写**：`commit-lock` 合并有变更的包源节点以及（若有）nixpkgs 节点，由 github-actions[bot] 推送
 
