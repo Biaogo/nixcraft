@@ -19,6 +19,8 @@
   gitMinimal,
   llvmPackages,
   zlib,
+  zstd,
+  libgit2,
   openssl,
   sqlite,
   dbus,
@@ -91,6 +93,9 @@ rustPlatform.buildRustPackage {
   buildInputs = [
     openssl
     sqlite
+    zlib
+    zstd
+    libgit2
     dbus
     alsa-lib
     gtk3
@@ -101,7 +106,6 @@ rustPlatform.buildRustPackage {
     pango
     libsoup_3
     webkitgtk_4_1
-    zlib
   ]
   ++ gstPlugins;
 
