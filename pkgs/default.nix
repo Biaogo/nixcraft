@@ -28,6 +28,7 @@
         "_mm512_dpbusd_epi32(acc.0, a.0, b.0).into()" \
         "{ let mut c = acc.0; std::arch::asm!(\"vpdpbusd {c}, {a}, {b}\", c = inout(zmm_reg) c, a = in(zmm_reg) a.0, b = in(zmm_reg) b.0, options(nostack)); c.into() }"
     '';
+    extraAttrs.systemAwsLc = true;
     extraAttrs.nixosCjk = true;
   };
   filmcraft = {
@@ -81,5 +82,33 @@
     src = inputs.figcraft-src;
     description = "FigCraft — UI/interface design tool";
     extraAttrs.nixosCjk = true;
+  };
+  texturecraft = {
+    src = inputs.texturecraft-src;
+    description = "TextureCraft — 3D texture painting";
+  };
+  craft-anything = {
+    src = inputs.craft-anything-src;
+    description = "Craft Anything — understand software and craft your own";
+  };
+  solidcraft = {
+    src = inputs.solidcraft-src;
+    description = "SolidCraft — parametric 3D CAD";
+    appId = "io.tangencylabs.solidcraft";
+    homepage = "https://github.com/tangency-labs/solidcraft";
+    extraAttrs.extraPostInstall = ''
+      d=assets/platforms/linux
+      id=io.tangencylabs.solidcraft
+      if [ -f $d/$id.desktop ]; then
+        install -Dm644 $d/$id.desktop $out/share/applications/$id.desktop
+      fi
+      if [ -f $d/$id.mime.xml ]; then
+        install -Dm644 $d/$id.mime.xml $out/share/mime/packages/$id.xml
+      fi
+      if [ -d assets/icons/app/linux/exports/hicolor ]; then
+        mkdir -p $out/share/icons
+        cp -r assets/icons/app/linux/exports/hicolor $out/share/icons/
+      fi
+    '';
   };
 }

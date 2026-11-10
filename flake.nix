@@ -60,6 +60,18 @@
       url = "github:storytold/figcraft";
       flake = false;
     };
+    texturecraft-src = {
+      url = "github:storytold/texturecraft";
+      flake = false;
+    };
+    craft-anything-src = {
+      url = "github:storytold/craft-anything";
+      flake = false;
+    };
+    solidcraft-src = {
+      url = "github:tangency-labs/solidcraft";
+      flake = false;
+    };
     artcraft-src = {
       url = "github:storytold/artcraft";
       flake = false;

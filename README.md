@@ -21,6 +21,9 @@
 | `deckcraft` | 演示文稿 |
 | `soundcraft` | 音频编辑 |
 | `figcraft` | 界面设计 |
+| `texturecraft` | 3D 纹理绘制 |
+| `craft-anything` | 看懂软件，再做出自己的 |
+| `solidcraft` | 参数化 3D CAD（Tangency Labs，社区应用） |
 | `artcraft` | AI 图像与视频创作 IDE（Tauri + npm 前端，只有 GUI） |
 
 除 `artcraft` 外，每个包通常提供 GUI 程序 `<名字>` 和命令行 / MCP 程序 `<名字>-cli`。`default` / `all` 是全部包的合集。

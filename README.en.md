@@ -21,6 +21,9 @@ Nix flake packaging of the [storytold](https://github.com/storytold) Craft deskt
 | `deckcraft` | Presentation editor |
 | `soundcraft` | Audio editor |
 | `figcraft` | UI / interface design |
+| `texturecraft` | 3D texture painting |
+| `craft-anything` | Understand software, then craft your own |
+| `solidcraft` | Parametric 3D CAD (Tangency Labs, community app) |
 | `artcraft` | IDE for interactive AI image and video creation (Tauri + npm frontend, GUI only) |
 
 Except `artcraft`, each package usually ships a GUI binary (`<name>`) and a CLI / MCP binary (`<name>-cli`). `default` / `all` is a symlinkJoin of every package.

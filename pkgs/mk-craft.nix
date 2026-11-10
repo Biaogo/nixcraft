@@ -21,6 +21,7 @@
   alsa-lib,
   fontconfig,
   openssl,
+  aws-lc,
   python3,
   autoAddDriverRunpath ? null,
   craft-fonts ? null,
@@ -57,10 +58,14 @@ let
     alsa-lib
   ];
   nixosCjk = extraAttrs.nixosCjk or false;
+  systemAwsLc = extraAttrs.systemAwsLc or false;
   extraPostPatch = extraAttrs.postPatch or "";
+  extraPostInstall = extraAttrs.extraPostInstall or "";
   drvAttrs = builtins.removeAttrs extraAttrs [
     "nixosCjk"
+    "systemAwsLc"
     "postPatch"
+    "extraPostInstall"
   ];
 in
 rustPlatform.buildRustPackage (
@@ -106,7 +111,8 @@ rustPlatform.buildRustPackage (
       openssl
       dbus
     ]
-    ++ extraBuildInputs;
+    ++ extraBuildInputs
+    ++ lib.optional systemAwsLc aws-lc;
 
     env = lib.optionalAttrs (craft-fonts != null) {
       CRAFT_FONTS_DIR = toString craft-fonts;
@@ -136,7 +142,8 @@ rustPlatform.buildRustPackage (
           --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
           --prefix PATH : "${lib.makeBinPath [ fontconfig ]}"
       done
-    '';
+    ''
+    + extraPostInstall;
 
     passthru = { inherit runtimeLibs; };
 

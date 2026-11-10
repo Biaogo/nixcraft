@@ -95,6 +95,22 @@ jobs:
               flake.lock lock-nodes/nixpkgs.json > flake.lock.new
             mv flake.lock.new flake.lock
           fi
+      - name: Lock inputs missing from flake.lock
+        run: |
+          set -euo pipefail
+          args=()
+          for name in texturecraft-src craft-anything-src solidcraft-src; do
+            if ! jq -e --arg n "$name" '.nodes[$n].locked.rev' flake.lock >/dev/null; then
+              case "$name" in
+                solidcraft-src) url=github:tangency-labs/solidcraft ;;
+                *) url=github:storytold/${name%-src} ;;
+              esac
+              args+=(--override-input "$name" "$url")
+            fi
+          done
+          if [ "${#args[@]}" -gt 0 ]; then
+            nix flake lock "${args[@]}"
+          fi
       - run: nix flake check --no-build
 
   build:
@@ -120,6 +136,9 @@ jobs:
           - deckcraft
           - soundcraft
           - figcraft
+          - texturecraft
+          - craft-anything
+          - solidcraft
           - artcraft
     steps:
       - name: Free disk space
@@ -175,8 +194,12 @@ jobs:
           input="${PKG}-src"
           locked_rev=$(jq -r --arg n "$input" '.nodes[$n].locked.rev // empty' flake.lock)
           locked_ref=$(jq -r --arg n "$input" '.nodes[$n].original.ref // empty' flake.lock)
+          case "$PKG" in
+            solidcraft) ORIGIN=tangency-labs/solidcraft ;;
+            *) ORIGIN=storytold/${PKG} ;;
+          esac
 
-          # Unauthenticated api.github.com is 60/hour per runner IP. A 14-way
+          # Unauthenticated api.github.com is 60/hour per runner IP. A full
           # matrix 403s before FORCE can take effect. Fall back to a forced build.
           gh_get() {
             curl -fsSL \
@@ -185,8 +208,8 @@ jobs:
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "$1"
           }
-          if ! release=$(gh_get "https://api.github.com/repos/storytold/${PKG}/releases/latest"); then
-            echo "release lookup failed for storytold/${PKG}"
+          if ! release=$(gh_get "https://api.github.com/repos/${ORIGIN}/releases/latest"); then
+            echo "release lookup failed for ${ORIGIN}"
             echo "should_update_lock=false" >> "$GITHUB_OUTPUT"
             if [ "$FORCE" = true ] || [ "$BUMP_NIXPKGS" = true ]; then
               echo "force/bump → build without lock update"
@@ -197,7 +220,7 @@ jobs:
           fi
           tag=$(echo "$release" | jq -r '.tag_name // empty')
           if [ -z "$tag" ] || [ "$tag" = "null" ]; then
-            echo "no GitHub release for storytold/${PKG}"
+            echo "no GitHub release for ${ORIGIN}"
             echo "should_update_lock=false" >> "$GITHUB_OUTPUT"
             if [ "$FORCE" = true ] || [ "$BUMP_NIXPKGS" = true ]; then
               echo "should_build=true" >> "$GITHUB_OUTPUT"
@@ -208,7 +231,7 @@ jobs:
           fi
 
           # Resolve the commit the tag points at (works for annotated tags).
-          if ! tag_json=$(gh_get "https://api.github.com/repos/storytold/${PKG}/commits/${tag}"); then
+          if ! tag_json=$(gh_get "https://api.github.com/repos/${ORIGIN}/commits/${tag}"); then
             echo "could not resolve commit for tag ${tag}"
             echo "should_update_lock=false" >> "$GITHUB_OUTPUT"
             if [ "$FORCE" = true ] || [ "$BUMP_NIXPKGS" = true ]; then
@@ -267,8 +290,12 @@ jobs:
           TAG: ${{ steps.check.outputs.latest_tag }}
         run: |
           set -euo pipefail
+          case "$PKG" in
+            solidcraft) ORIGIN=tangency-labs/solidcraft ;;
+            *) ORIGIN=storytold/${PKG} ;;
+          esac
           # Pin this input in flake.lock to the official Release tag (flake.nix URL unchanged).
-          nix flake lock --override-input "${PKG}-src" "github:storytold/${PKG}/${TAG}"
+          nix flake lock --override-input "${PKG}-src" "github:${ORIGIN}/${TAG}"
           jq --arg n "${PKG}-src" '.nodes[$n].locked' flake.lock
 
       - name: Build ${{ matrix.package }}
@@ -332,7 +359,17 @@ jobs:
           echo "merging: ${files[*]}"
           jq -s '.[0] as $lock | ($lock.nodes + (.[1:] | add)) as $n | $lock | .nodes = $n' \
             flake.lock "${files[@]}" > flake.lock.new
-          mv flake.lock.new flake.lock
+          # New *-src nodes are not referenced until root.inputs points at them.
+          jq '
+            .nodes.root.inputs += (
+              .nodes
+              | keys
+              | map(select(endswith("-src") or . == "craft-fonts"))
+              | map({key: ., value: .})
+              | from_entries
+            )
+          ' flake.lock.new > flake.lock.wired
+          mv flake.lock.wired flake.lock
           git diff --stat
 
       - name: Commit and push

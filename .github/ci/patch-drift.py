@@ -100,7 +100,7 @@ def load_patcher():
 def mk_craft_packages():
     """The package names defined at the top level of pkgs/default.nix."""
     text = (REPO / "pkgs" / "default.nix").read_text(encoding="utf-8")
-    packages = set(re.findall(r"^  ([A-Za-z0-9_]+) = \{", text, re.M))
+    packages = set(re.findall(r"^  ([A-Za-z0-9_-]+) = \{", text, re.M))
     if not packages:
         raise SystemExit("no packages found in pkgs/default.nix")
     return packages
