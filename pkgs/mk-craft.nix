@@ -72,10 +72,33 @@ rustPlatform.buildRustPackage (
   {
     inherit pname version src;
 
-    cargoLock = {
-      lockFile = "${src}/Cargo.lock";
-      allowBuiltinFetchGit = true;
-    };
+    # Two git sources can share name-version; the second ln follows the first
+    # symlink into the read-only store. Those duplicates here are cfg(windows)
+    # and are not compiled on Linux, so keep the first copy. The script after
+    # the ln still appends each source's .cargo-config, so do not skip that.
+    cargoDeps =
+      let
+        vendored = rustPlatform.importCargoLock {
+          lockFile = "${src}/Cargo.lock";
+          allowBuiltinFetchGit = true;
+        };
+        needle = ''ln -s "$crate" $out/$(basename "$crate" | cut -c 34-)'';
+        replacement = ''
+          dest=$out/$(basename "$crate" | cut -c 34-)
+          if [ -e "$dest" ] || [ -L "$dest" ]; then
+            echo "skip duplicate vendored crate $(basename "$dest")" >&2
+          else
+            ln -s "$crate" "$dest"
+          fi
+        '';
+      in
+      vendored.overrideAttrs (old: {
+        buildCommand =
+          if !lib.hasInfix needle old.buildCommand then
+            throw "importCargoLock vendor script no longer has the duplicate-crate ln; update pkgs/mk-craft.nix"
+          else
+            builtins.replaceStrings [ needle ] [ replacement ] old.buildCommand;
+      });
 
     cargoBuildFlags = [
       "--locked"
