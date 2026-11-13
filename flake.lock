@@ -298,11 +298,11 @@
     "solidcraft-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1794446362,
-        "narHash": "sha256-4L/Br60Eky0Ud58hDtpzTKxQEJWelLDDwq5xPROMuh4=",
+        "lastModified": 1794534947,
+        "narHash": "sha256-YmvDHy3qTnA8iRtppJ/iDLjyKynnmjKwIYO+c4VdMes=",
         "owner": "tangency-labs",
         "repo": "solidcraft",
-        "rev": "0c5292285a7e9331a780c11a2d55f22d8e1c9118",
+        "rev": "3c8efdb51952ed9a5f3ebc722c2bad1454fe6d80",
         "type": "github"
       },
       "original": {
