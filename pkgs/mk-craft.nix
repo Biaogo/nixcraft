@@ -72,23 +72,50 @@ rustPlatform.buildRustPackage (
   {
     inherit pname version src;
 
-    # Two git sources can share name-version; the second ln follows the first
-    # symlink into the read-only store. Those duplicates here are cfg(windows)
-    # and are not compiled on Linux, so keep the first copy. The script after
-    # the ln still appends each source's .cargo-config, so do not skip that.
+    # Two git sources can share name-version. Skipping the second ln collapses
+    # both onto one directory, and cargo --locked rewrites the lock even for
+    # cfg(windows) crates the build never compiles. The later copy gets its own
+    # directory source.
     cargoDeps =
       let
         vendored = rustPlatform.importCargoLock {
           lockFile = "${src}/Cargo.lock";
           allowBuiltinFetchGit = true;
         };
-        needle = ''ln -s "$crate" $out/$(basename "$crate" | cut -c 34-)'';
+        needle = ''
+          ln -s "$crate" $out/$(basename "$crate" | cut -c 34-)
+
+                if [ -e "$crate/.cargo-config" ]; then
+                  key=$(sed 's/\[source\."\(.*\)"\]/\1/; t; d' < "$crate/.cargo-config")
+                  if [[ -z ''${keysSeen[$key]} ]]; then
+                    keysSeen[$key]=1
+                    cat "$crate/.cargo-config" >> $out/.cargo/config.toml
+                  fi
+                fi
+        '';
         replacement = ''
           dest=$out/$(basename "$crate" | cut -c 34-)
           if [ -e "$dest" ] || [ -L "$dest" ]; then
-            echo "skip duplicate vendored crate $(basename "$dest")" >&2
+            dup_i=$(( ''${dup_i:-0} + 1 ))
+            mkdir -p $out/dup-$dup_i
+            ln -s "$crate" $out/dup-$dup_i/$(basename "$dest")
+            if [ -e "$crate/.cargo-config" ]; then
+              sed "s/replace-with = \"vendored-sources\"/replace-with = \"vendored-dup-$dup_i\"/" "$crate/.cargo-config" >> $out/.cargo/config.toml
+              cat >> $out/.cargo/config.toml <<EOF
+
+          [source.vendored-dup-$dup_i]
+          directory = "cargo-vendor-dir/dup-$dup_i"
+          EOF
+            fi
           else
             ln -s "$crate" "$dest"
+            if [ -e "$crate/.cargo-config" ]; then
+              key=$(sed 's/\[source\."\(.*\)"\]/\1/; t; d' < "$crate/.cargo-config")
+              if [[ -z ''${keysSeen[$key]} ]]; then
+                keysSeen[$key]=1
+                cat "$crate/.cargo-config" >> $out/.cargo/config.toml
+              fi
+            fi
           fi
         '';
       in
