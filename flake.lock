@@ -162,11 +162,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1794386569,
-        "narHash": "sha256-x9sADJvoVG0L6RejZB+/BB4YiGZFBZrfTlhF4uBq1tQ=",
+        "lastModified": 1794537146,
+        "narHash": "sha256-Wpz/7x/YWnDIBu7yj6ixe8j6fIMsidd9Y+o1PqPF3iM=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "d4f25a3e562008648d45bcf2d70bcc7422cad84e",
+        "rev": "d5cc6833999746cffdfe0598f7bc801a57b887a9",
         "type": "github"
       },
       "original": {
@@ -298,11 +298,11 @@
     "solidcraft-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1794534947,
-        "narHash": "sha256-YmvDHy3qTnA8iRtppJ/iDLjyKynnmjKwIYO+c4VdMes=",
+        "lastModified": 1794675316,
+        "narHash": "sha256-yUs/EBm8VC4p2ZLVRlEBd4OzZ6zXNGb84eGDX2AoO+s=",
         "owner": "tangency-labs",
         "repo": "solidcraft",
-        "rev": "3c8efdb51952ed9a5f3ebc722c2bad1454fe6d80",
+        "rev": "1b1e940cc48e4d1d5d01971a4be20e2e55647066",
         "type": "github"
       },
       "original": {
