@@ -205,7 +205,7 @@ rustPlatform.buildRustPackage (
     # entries against the vendor dir, so entries for crates the lock does not
     # use are dropped before resolution fails because they were not vendored.
     prePatch = ''
-      python3 ${./patches/vendor-egui.py} "''${cargoDepsCopy:?cargoSetupPostUnpackHook did not run}"
+      python3 ${./patches/vendor-egui.py} "''${cargoDepsCopy:?cargoSetupPostUnpackHook did not run}" .
       python3 ${./patches}/cargo-patch-prune.py . "''${cargoDepsCopy:?cargoSetupPostUnpackHook did not run}"
     '';
 

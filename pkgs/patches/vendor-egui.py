@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Patch the vendored egui that every *Craft app builds against.
+"""Patch the egui crate that every *Craft app builds against.
 
-Usage: vendor-egui.py <writable cargo vendor dir>
+Usage: vendor-egui.py <writable cargo vendor dir> [source root]
 
-The vendor dir is the writable copy nixpkgs' cargoSetupPostUnpackHook makes in
-the build tree (``$cargoDepsCopy``). ``importCargoLock`` writes
-``{"files":{},...}`` as the crate checksum file, so editing files here does not
-break cargo's verification.
+Most apps resolve egui from crates.io or git, so nixpkgs'
+cargoSetupPostUnpackHook leaves a writable copy under ``$cargoDepsCopy``.
+``importCargoLock`` writes ``{"files":{},...}`` as the crate checksum file, so
+editing files there does not break cargo's verification. Some apps (e.g.
+SolidCraft v0.46+) instead vendor egui in-tree via a ``path = ...`` entry in
+``Cargo.toml`` (``[patch.crates-io]``), which ``importCargoLock`` does not copy
+into the vendor dir; passing ``[source root]`` discovers those in-tree copies as
+well.
 
-egui 0.36.2 needs both rules on NixOS/Wayland, while egui 0.37.0 (crates.io,
-and the storytold/egui fork the apps pin from v0.12.0 on) already contains both
-fixes - request_focus only interrupts the IME when focus actually changes, and
-the accesskit TreeUpdate drops a focus id with no node. The rules are therefore
-kept only to keep older pins building, and the script skips a rule whose
-upstream-fixed form is already present instead of failing.
+egui 0.36.2 needs both rules on NixOS/Wayland. Upstream egui 0.37.0 (crates.io,
+and SolidCraft's in-tree vendor/egui) fixes the accesskit TreeUpdate focus issue
+but still interrupts IME unconditionally in ``request_focus``; the storytold/egui
+fork carries both fixes. The script skips a rule whose upstream-fixed form is
+already present instead of failing.
 
 1. ``Memory::request_focus`` calls ``interrupt_ime()`` unconditionally, and
    therefore also on a no-op re-request. Several dialogs (GridCraft's command
@@ -32,6 +35,7 @@ upstream-fixed form is already present instead of failing.
 
 import os
 import sys
+import tomllib
 
 MEMORY_REQUEST_FOCUS_OLD = """    /// Give keyboard focus to a specific widget.
     /// See also [`crate::Response::request_focus`].
@@ -130,24 +134,108 @@ def patch_file(old, new, fixed, label, path):
     print(f"vendor-egui: patched {label} in {path}")
 
 
+def is_egui_dir(name):
+    # `egui-0.36.2`, but not `egui-wgpu-0.36.2` / `egui-winit-0.36.2`.
+    return name == "egui" or (name.startswith("egui-") and name[5:6].isdigit())
+
+
+def vendor_egui_dirs(vendor):
+    crates = []
+    for name in sorted(os.listdir(vendor)):
+        path = os.path.join(vendor, name)
+        if not os.path.isdir(path):
+            continue
+        if is_egui_dir(name):
+            crates.append((name, path))
+        elif name.startswith("dup-") and name[4:].isdigit():
+            for sub in sorted(os.listdir(path)):
+                subpath = os.path.join(path, sub)
+                if is_egui_dir(sub) and os.path.isdir(subpath):
+                    crates.append((f"{name}/{sub}", subpath))
+    return crates
+
+
+def iter_dep_tables(manifest):
+    for table in manifest.get("patch", {}).values():
+        if isinstance(table, dict):
+            yield table
+    ws_deps = manifest.get("workspace", {}).get("dependencies")
+    if isinstance(ws_deps, dict):
+        yield ws_deps
+    for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+        deps = manifest.get(section)
+        if isinstance(deps, dict):
+            yield deps
+    for target in manifest.get("target", {}).values():
+        if isinstance(target, dict):
+            for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+                deps = target.get(section)
+                if isinstance(deps, dict):
+                    yield deps
+
+
+def source_egui_dirs(source_root):
+    crates = []
+    root_manifest = os.path.realpath(os.path.join(source_root, "Cargo.toml"))
+    for directory, dirnames, filenames in os.walk(source_root):
+        dirnames[:] = sorted(
+            name
+            for name in dirnames
+            if name not in {".git", "target", "vendor", "node_modules"}
+        )
+        if "Cargo.toml" not in filenames:
+            continue
+        manifest_path = os.path.join(directory, "Cargo.toml")
+        try:
+            with open(manifest_path, "rb") as handle:
+                manifest = tomllib.load(handle)
+        except tomllib.TOMLDecodeError:
+            if os.path.realpath(manifest_path) == root_manifest:
+                raise
+            continue
+        for table in iter_dep_tables(manifest):
+            for key, spec in table.items():
+                if not isinstance(spec, dict):
+                    continue
+                if spec.get("package", key) != "egui":
+                    continue
+                rel = spec.get("path")
+                if not isinstance(rel, str):
+                    continue
+                crate_dir = os.path.normpath(os.path.join(directory, rel))
+                label = os.path.relpath(crate_dir, source_root)
+                crates.append((label, crate_dir))
+    return crates
+
+
 def main(argv):
-    if len(argv) != 2:
-        raise SystemExit(f"usage: {argv[0]} <cargo vendor dir>")
+    if len(argv) not in (2, 3):
+        raise SystemExit(f"usage: {argv[0]} <cargo vendor dir> [source root]")
     vendor = argv[1]
+    source_root = argv[2] if len(argv) == 3 else None
     if not os.path.isdir(vendor):
         raise SystemExit(f"vendor-egui: no such directory: {vendor}")
+    if source_root is not None and not os.path.isdir(source_root):
+        raise SystemExit(f"vendor-egui: no such directory: {source_root}")
 
-    crates = sorted(
-        name
-        for name in os.listdir(vendor)
-        # `egui-0.36.2`, but not `egui-wgpu-0.36.2` / `egui-winit-0.36.2`.
-        if name == "egui" or (name.startswith("egui-") and name[5:6].isdigit())
-    )
+    candidates = vendor_egui_dirs(vendor)
+    if source_root is not None:
+        candidates.extend(source_egui_dirs(source_root))
+
+    crates = []
+    seen = set()
+    for label, crate_dir in candidates:
+        real = os.path.realpath(crate_dir)
+        if real not in seen:
+            seen.add(real)
+            crates.append((label, crate_dir))
+
     if not crates:
-        raise SystemExit(f"vendor-egui: no egui crate under {vendor}")
-    for crate in crates:
-        memory = os.path.join(vendor, crate, "src", "memory", "mod.rs")
-        context = os.path.join(vendor, crate, "src", "context.rs")
+        where = f"{vendor} or {source_root}" if source_root is not None else vendor
+        raise SystemExit(f"vendor-egui: no egui crate under {where}")
+    for label, crate_dir in crates:
+        memory = os.path.join(crate_dir, "src", "memory", "mod.rs")
+        context = os.path.join(crate_dir, "src", "context.rs")
         for path in (memory, context):
             if not os.path.isfile(path):
                 raise SystemExit(f"vendor-egui: missing {path}")
@@ -155,14 +243,14 @@ def main(argv):
             MEMORY_REQUEST_FOCUS_OLD,
             MEMORY_REQUEST_FOCUS_NEW,
             MEMORY_REQUEST_FOCUS_FIXED,
-            f"{crate} request_focus/IME",
+            f"{label} request_focus/IME",
             memory,
         )
         patch_file(
             CONTEXT_FOCUS_OLD,
             CONTEXT_FOCUS_NEW,
             CONTEXT_FOCUS_FIXED,
-            f"{crate} accesskit focus",
+            f"{label} accesskit focus",
             context,
         )
 
