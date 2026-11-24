@@ -67,11 +67,11 @@
     "designcraft-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1794440252,
-        "narHash": "sha256-rsQfF66CymQ46Ty+RG76A46d6mD8HcMHCOH9EE6sog4=",
+        "lastModified": 1795461298,
+        "narHash": "sha256-3uAGBkGuzy0MXbgX22fyTQoJjnBamxfX6dBD9xJ/b2Q=",
         "owner": "storytold",
         "repo": "designcraft",
-        "rev": "33a467872268c98536231491865b4011b0275b17",
+        "rev": "7470feae15b824534c842b7888952e63f6493003",
         "type": "github"
       },
       "original": {
