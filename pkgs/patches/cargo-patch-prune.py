@@ -101,6 +101,22 @@ def prune_lock(path, dropped_names, source_root):
             )
 
 
+def collect_vendor_dirs(vendor):
+    names = set()
+    with os.scandir(vendor) as entries:
+        for entry in entries:
+            if not entry.is_dir():
+                continue
+            if (entry.name.startswith("git-") or entry.name.startswith("dup-")) and entry.name[4:].isdigit():
+                with os.scandir(entry.path) as subentries:
+                    for sub in subentries:
+                        if sub.is_dir():
+                            names.add(sub.name)
+            else:
+                names.add(entry.name)
+    return names
+
+
 def main(argv):
     if len(argv) != 3:
         raise SystemExit(
@@ -108,8 +124,7 @@ def main(argv):
         )
 
     source_root, vendor = argv[1:]
-    with os.scandir(vendor) as entries:
-        vendor_dirs = {entry.name for entry in entries if entry.is_dir()}
+    vendor_dirs = collect_vendor_dirs(vendor)
 
     for directory, dirnames, filenames in os.walk(source_root):
         dirnames[:] = [

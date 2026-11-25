@@ -21,6 +21,7 @@
   alsa-lib,
   fontconfig,
   openssl,
+  zstd,
   aws-lc,
   python3,
   autoAddDriverRunpath ? null,
@@ -72,10 +73,12 @@ rustPlatform.buildRustPackage (
   {
     inherit pname version src;
 
-    # Two git sources can share name-version. Skipping the second ln collapses
-    # both onto one directory, and cargo --locked rewrites the lock even for
-    # cfg(windows) crates the build never compiles. The later copy gets its own
-    # directory source.
+    # Each git source gets its own vendor subdirectory (`git-N`) keyed by its
+    # `[source."..."]` header. Multiple revisions of the same git repo (such as
+    # storytold/craft-libs) can share `name-version` crates across many
+    # workspace members; keeping every crate from a git source in that source's
+    # own directory avoids both symlink collisions and duplicate `[source."..."]`
+    # keys in `.cargo/config.toml`.
     cargoDeps =
       let
         vendored = rustPlatform.importCargoLock {
@@ -94,28 +97,24 @@ rustPlatform.buildRustPackage (
                 fi
         '';
         replacement = ''
-          dest=$out/$(basename "$crate" | cut -c 34-)
-          if [ -e "$dest" ] || [ -L "$dest" ]; then
-            dup_i=$(( ''${dup_i:-0} + 1 ))
-            mkdir -p $out/dup-$dup_i
-            ln -s "$crate" $out/dup-$dup_i/$(basename "$dest")
-            if [ -e "$crate/.cargo-config" ]; then
-              sed "s/replace-with = \"vendored-sources\"/replace-with = \"vendored-dup-$dup_i\"/" "$crate/.cargo-config" >> $out/.cargo/config.toml
+          name=$(basename "$crate" | cut -c 34-)
+          if [ -e "$crate/.cargo-config" ]; then
+            key=$(sed 's/\[source\."\(.*\)"\]/\1/; t; d' < "$crate/.cargo-config")
+            if [[ -z ''${keysSeen[$key]} ]]; then
+              git_i=$(( ''${git_i:-0} + 1 ))
+              keysSeen[$key]=$git_i
+              mkdir -p "$out/git-$git_i"
+              printf '\n' >> $out/.cargo/config.toml
+              sed "s/replace-with = \"vendored-sources\"/replace-with = \"vendored-git-$git_i\"/" "$crate/.cargo-config" >> $out/.cargo/config.toml
               cat >> $out/.cargo/config.toml <<EOF
 
-          [source.vendored-dup-$dup_i]
-          directory = "cargo-vendor-dir/dup-$dup_i"
+          [source.vendored-git-$git_i]
+          directory = "cargo-vendor-dir/git-$git_i"
           EOF
             fi
+            ln -s "$crate" "$out/git-''${keysSeen[$key]}/$name"
           else
-            ln -s "$crate" "$dest"
-            if [ -e "$crate/.cargo-config" ]; then
-              key=$(sed 's/\[source\."\(.*\)"\]/\1/; t; d' < "$crate/.cargo-config")
-              if [[ -z ''${keysSeen[$key]} ]]; then
-                keysSeen[$key]=1
-                cat "$crate/.cargo-config" >> $out/.cargo/config.toml
-              fi
-            fi
+            ln -s "$crate" "$out/$name"
           fi
         '';
       in
@@ -159,6 +158,7 @@ rustPlatform.buildRustPackage (
       alsa-lib
       fontconfig
       openssl
+      zstd
       dbus
     ]
     ++ extraBuildInputs

@@ -147,7 +147,7 @@ def vendor_egui_dirs(vendor):
             continue
         if is_egui_dir(name):
             crates.append((name, path))
-        elif name.startswith("dup-") and name[4:].isdigit():
+        elif (name.startswith("git-") or name.startswith("dup-")) and name[4:].isdigit():
             for sub in sorted(os.listdir(path)):
                 subpath = os.path.join(path, sub)
                 if is_egui_dir(sub) and os.path.isdir(subpath):
