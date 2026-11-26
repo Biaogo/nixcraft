@@ -51,11 +51,11 @@
     "deckcraft-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1794440426,
-        "narHash": "sha256-nNoZvhnGEFNmh780GtHoQ4jczs65laFRq7+bF4akXTg=",
+        "lastModified": 1795632581,
+        "narHash": "sha256-nJRJK8Q7RkKcGT+aDO8GYXRw3BToa/niaXZ+RyIiLAY=",
         "owner": "storytold",
         "repo": "deckcraft",
-        "rev": "7cc73ab1895ed2e30c8afbcada20c70b9ea0a440",
+        "rev": "4a980c33ddf37eb64157777fcaeab6d19baa5878",
         "type": "github"
       },
       "original": {
@@ -266,11 +266,11 @@
     "wordcraft-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1794440289,
-        "narHash": "sha256-n8BQIiX6C3D8pd8pil/reM/ffSW+cPEsI/OuQSUrYus=",
+        "lastModified": 1795631338,
+        "narHash": "sha256-3WNMejMynXJE6fDwZvVeYX43/bhpYUmTSE5t5ugbODI=",
         "owner": "storytold",
         "repo": "wordcraft",
-        "rev": "079f478bd85df7bcc567e3bafa7d7219096f9c3c",
+        "rev": "5d658dc033f3139926839bffd6ae0eef558c210c",
         "type": "github"
       },
       "original": {
